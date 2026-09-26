@@ -1,0 +1,22 @@
+{
+  "name": "@sentinel/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'no build'",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo 'no lint configured'",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sentinel/decision-engine": "workspace:*",
+    "@sentinel/jev-client": "workspace:*",
+    "@sentinel/policy-engine": "workspace:*",
+    "@sentinel/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}
