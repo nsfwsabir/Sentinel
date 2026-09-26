@@ -143,8 +143,8 @@ export function evaluateDeterministic(
       });
       continue;
     }
-    // 3. Production deletion/destruction → at least review
-    if ((wantsProdApproval || (destructive && targetsProd)) && destructive && targetsProd) {
+    // 3. Production deletion/destruction → at least review (only prod policies)
+    if (wantsProdApproval && destructive && targetsProd) {
       findings.push({
         policyId: p.id,
         outcome: p.mode === "block" ? "block" : "review",
@@ -152,8 +152,8 @@ export function evaluateDeterministic(
       });
       continue;
     }
-    // 4. Payments above $100 → review
-    if ((wantsPaymentApproval || (amt !== null && amt > 100)) && amt !== null && amt > 100) {
+    // 4. Payments above $100 → review (only payment policies)
+    if (wantsPaymentApproval && amt !== null && amt > 100) {
       findings.push({
         policyId: p.id,
         outcome: p.mode === "block" ? "block" : "review",
