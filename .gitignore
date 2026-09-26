@@ -1,0 +1,24 @@
+# local docs (per project instruction, not committed)
+docs/
+
+# deps
+node_modules/
+.pnp
+.pnp.js
+
+# build
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# env
+.env
+.env*.local
+!.env.example
+
+# logs / os
+*.log
+.DS_Store
+coverage/
