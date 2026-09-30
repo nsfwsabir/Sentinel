@@ -17,6 +17,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@sentinel/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@sentinel/decision-engine':
         specifier: workspace:*
         version: link:../../packages/decision-engine

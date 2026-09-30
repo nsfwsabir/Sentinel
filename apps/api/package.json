@@ -12,6 +12,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@sentinel/db": "workspace:*",
     "@sentinel/decision-engine": "workspace:*",
     "@sentinel/jev-client": "workspace:*",
     "@sentinel/logger": "workspace:*",

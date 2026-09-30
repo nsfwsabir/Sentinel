@@ -67,6 +67,17 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     const started = Date.now();
     const parsed = EvaluateRequestSchema.parse(req.body);
 
+    // Rate limit per agent (Redis when configured, memory otherwise).
+    // Fail-open: limiter errors never block evaluation.
+    try {
+      const { checkLimit } = await import("@sentinel/db");
+      const limit = Number(process.env.RATE_LIMIT_PER_MIN ?? 120);
+      const { allowed } = await checkLimit(`eval:${parsed.agentId}`, limit);
+      if (!allowed) return reply.code(429).send({ error: "rate limited" });
+    } catch {
+      // limiter unavailable — continue
+    }
+
     const agent = store.agents.get(parsed.agentId);
     if (!agent || agent.status !== "active") {
       return reply.code(403).send({ error: "unknown or disabled agent" });
@@ -145,6 +156,19 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     metrics.decisions_total += 1;
     metrics[`${decision.outcome}_total` as "allow_total" | "review_total" | "block_total"] += 1;
     if (decision.fallbackUsed) metrics.fallback_total += 1;
+
+    // Best-effort PG audit (managed DATABASE_URL). Never breaks pipeline.
+    persistAudit({
+      agent,
+      tool,
+      policies,
+      actionId,
+      decisionId,
+      redacted,
+      parsed,
+      decision,
+      evaluationMs: Date.now() - started,
+    }).catch(() => {});
 
     return {
       decision: decision.outcome,
@@ -262,4 +286,73 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   app.get("/v1/metrics", async () => metrics);
 
   return app;
+}
+
+/** Fire-and-forget PG mirror of the in-memory decision. Skips when DATABASE_URL unset. */
+async function persistAudit(input: {
+  agent: { id: string; name: string; description?: string; status: string };
+  tool: { id: string; name: string; description: string; riskLevel: string };
+  policies: { id: string; name: string; description: string; severity: string; mode: string; enabled: boolean; version: number }[];
+  actionId: string;
+  decisionId: string;
+  redacted: Record<string, unknown>;
+  parsed: { agentId: string; toolId: string; task?: string; arguments: Record<string, unknown>; context: Record<string, unknown> };
+  decision: { outcome: string; confidence?: number; reason?: string; fallbackUsed: boolean; judgments: { question: string; answer: unknown; confidence?: number }[] };
+  evaluationMs: number;
+}): Promise<void> {
+  const { isDbConfigured, db, agents, tools, policies, actions, decisions, judgments } = await import("@sentinel/db");
+  if (!isDbConfigured()) return;
+  const d = db();
+  const now = new Date();
+  await d.insert(agents).values({
+    id: input.agent.id,
+    name: input.agent.name,
+    description: input.agent.description ?? null,
+    status: input.agent.status,
+    createdAt: now,
+  }).onConflictDoNothing();
+  await d.insert(tools).values({
+    id: input.tool.id,
+    name: input.tool.name,
+    description: input.tool.description,
+    riskLevel: input.tool.riskLevel,
+  }).onConflictDoNothing();
+  for (const p of input.policies) {
+    await d.insert(policies).values({
+      id: p.id, name: p.name, description: p.description,
+      severity: p.severity, mode: p.mode, enabled: p.enabled, version: p.version,
+    }).onConflictDoNothing();
+  }
+  await d.insert(actions).values({
+    id: input.actionId,
+    agentId: input.parsed.agentId,
+    toolId: input.parsed.toolId,
+    task: input.parsed.task ?? null,
+    arguments: input.redacted,
+    context: input.parsed.context,
+    createdAt: now,
+  });
+  await d.insert(decisions).values({
+    id: input.decisionId,
+    actionId: input.actionId,
+    outcome: input.decision.outcome,
+    confidence: input.decision.confidence ?? null,
+    reason: input.decision.reason ?? null,
+    policyIds: [],
+    approvalStatus: input.decision.outcome === "review" ? "pending" : null,
+    fallbackUsed: input.decision.fallbackUsed,
+    evaluationDurationMs: input.evaluationMs,
+    createdAt: now,
+  });
+  for (let i = 0; i < input.decision.judgments.length; i++) {
+    const j = input.decision.judgments[i];
+    await d.insert(judgments).values({
+      id: `jud_${input.decisionId}_${i}`,
+      decisionId: input.decisionId,
+      question: j.question,
+      type: "noul",
+      answer: j.answer as object,
+      confidence: j.confidence ?? null,
+    });
+  }
 }
