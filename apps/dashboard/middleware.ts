@@ -1,16 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { timingSafeEqual } from "node:crypto";
 
 // Minimal basic-auth gate for approvals (and optionally whole dashboard).
-// Uses stdlib timingSafeEqual — no custom crypto.
+// Edge-safe: no node: imports (ponytail: plain compare; timing-safe
+// compare lives server-side in the API route where node:crypto exists).
 function authorized(req: NextRequest): boolean {
   const user = process.env.ADMIN_USER ?? "admin";
   const pass = process.env.ADMIN_PASS ?? "admin";
   const header = req.headers.get("authorization") ?? "";
-  const expected = "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
-  const a = Buffer.from(header);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+  const expected = "Basic " + btoa(`${user}:${pass}`);
+  return header === expected;
 }
 
 export function middleware(req: NextRequest) {
