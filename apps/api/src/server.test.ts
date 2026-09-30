@@ -68,4 +68,35 @@ describe("api", () => {
     expect(approved.statusCode).toBe(200);
     expect(approved.json().approvalStatus).toBe("approved");
   });
+
+  it("registers agents/tools and filters decisions + metrics", async () => {
+    const app = buildServer(createMemoryStore());
+    const agent = await app.inject({
+      method: "POST",
+      url: "/v1/agents",
+      headers: { "x-api-key": "dev-key-1" },
+      payload: { id: "support-agent", name: "Support", status: "active" },
+    });
+    expect(agent.statusCode).toBe(201);
+
+    const tool = await app.inject({
+      method: "POST",
+      url: "/v1/tools",
+      headers: { "x-api-key": "dev-key-1" },
+      payload: { id: "send_dm", name: "send_dm", description: "Send DM", riskLevel: "low" },
+    });
+    expect(tool.statusCode).toBe(201);
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { "x-api-key": "dev-key-1" },
+      payload: { agentId: "support-agent", toolId: "send_dm", arguments: { text: "hi" }, context: {} },
+    });
+    const filtered = await app.inject({ method: "GET", url: "/v1/decisions?agentId=support-agent" });
+    expect(filtered.json().length).toBe(1);
+
+    const metrics = await app.inject({ method: "GET", url: "/v1/metrics" });
+    expect(metrics.json().decisions_total).toBe(1);
+  });
 });

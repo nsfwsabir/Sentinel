@@ -2,7 +2,7 @@ import { createMemoryStore, seedDefaults, type Store } from "./store.js";
 import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
 import { decide } from "@sentinel/decision-engine";
 import { jevClientFromEnv } from "@sentinel/jev-client";
-import { EvaluateRequestSchema, PolicySchema } from "@sentinel/schemas";
+import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
 import { childLogger } from "@sentinel/logger";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
@@ -43,6 +43,15 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   seedDefaults(store);
   const app = Fastify({ logger: false });
   const jev = jevClientFromEnv();
+  // TRD §12 metrics — in-memory counters (PG aggregation in Phase 9).
+  const metrics = {
+    decisions_total: 0,
+    allow_total: 0,
+    review_total: 0,
+    block_total: 0,
+    fallback_total: 0,
+    approvals_total: 0,
+  };
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     const status = err.statusCode ?? 500;
@@ -133,6 +142,10 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
       fallback_used: decision.fallbackUsed,
     }).info("decision");
 
+    metrics.decisions_total += 1;
+    metrics[`${decision.outcome}_total` as "allow_total" | "review_total" | "block_total"] += 1;
+    if (decision.fallbackUsed) metrics.fallback_total += 1;
+
     return {
       decision: decision.outcome,
       confidence: decision.confidence,
@@ -173,7 +186,25 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   });
 
   // Decisions + approvals
-  app.get("/v1/decisions", async () => [...store.decisions.values()]);
+  app.get("/v1/decisions", async (req) => {
+    const q = req.query as { outcome?: string; agentId?: string; toolId?: string; limit?: string };
+    let list = [...store.decisions.values()];
+    if (q.outcome) list = list.filter((d) => d.outcome === q.outcome);
+    if (q.agentId) {
+      const actionIds = new Set(
+        [...store.actions.values()].filter((a) => a.agentId === q.agentId).map((a) => a.id),
+      );
+      list = list.filter((d) => actionIds.has(d.actionId));
+    }
+    if (q.toolId) {
+      const actionIds = new Set(
+        [...store.actions.values()].filter((a) => a.toolId === q.toolId).map((a) => a.id),
+      );
+      list = list.filter((d) => actionIds.has(d.actionId));
+    }
+    const limit = Math.min(Number(q.limit ?? 100) || 100, 500);
+    return list.slice(-limit).reverse();
+  });
   app.get("/v1/decisions/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const d = store.decisions.get(id);
@@ -196,11 +227,39 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     // REVIEW is first-class: every approval audited, never auto-converted (§20)
     const next = { ...d, approvalStatus: status as "approved" | "rejected" };
     store.decisions.set(id, next);
+    metrics.approvals_total += 1;
     childLogger({ decision_id: id, decision: status }).info("approval");
     return next;
   };
   app.post("/v1/approvals/:id/approve", setApproval("approved"));
   app.post("/v1/approvals/:id/reject", setApproval("rejected"));
+
+  // Agents + tools — PRD §9 success criteria steps 1 & 3.
+  app.get("/v1/agents", async () => [...store.agents.values()]);
+  app.post("/v1/agents", async (req, reply) => {
+    requireAgentKey(req);
+    const a = AgentSchema.parse({ ...(req.body as object), createdAt: new Date().toISOString() });
+    store.agents.set(a.id, a);
+    return reply.code(201).send(a);
+  });
+  app.patch("/v1/agents/:id", async (req) => {
+    requireAgentKey(req);
+    const { id } = req.params as { id: string };
+    const cur = store.agents.get(id);
+    if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
+    const next = AgentSchema.parse({ ...cur, ...((req.body ?? {}) as object) });
+    store.agents.set(id, next);
+    return next;
+  });
+  app.get("/v1/tools", async () => [...store.tools.values()]);
+  app.post("/v1/tools", async (req, reply) => {
+    requireAgentKey(req);
+    const t = ToolSchema.parse(req.body);
+    store.tools.set(t.id, t);
+    return reply.code(201).send(t);
+  });
+
+  app.get("/v1/metrics", async () => metrics);
 
   return app;
 }
