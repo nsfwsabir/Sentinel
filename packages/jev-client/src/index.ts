@@ -74,25 +74,11 @@ export class MockJevClient implements JevClient {
 }
 
 /**
- * Real Jev over HTTP — stub behind JEV_API_URL/JEV_API_KEY.
- * Kept server-side only (TRD §6). Throws on missing config so
- * decision-engine fails closed instead of inventing a judgment.
+ * Real Jev over HTTP — see ./http.ts. Re-exported here so consumers
+ * keep a single import. Kept server-side only (TRD §6).
  */
-export class HttpJevClient implements JevClient {
-  readonly name = "http";
-  constructor(
-    private apiUrl: string = process.env.JEV_API_URL ?? "",
-    private apiKey: string = process.env.JEV_API_KEY ?? "",
-  ) {}
-
-  async judge(_state: EvalState): Promise<Omit<Judgment, "id" | "decisionId">[]> {
-    if (!this.apiUrl || !this.apiKey) {
-      throw new Error("Jev unavailable: JEV_API_URL/JEV_API_KEY not configured");
-    }
-    // Real HTTP call lands here in V1.5; fail closed until wired.
-    throw new Error("Jev unavailable: HttpJevClient not yet wired to endpoint");
-  }
-}
+export { HttpJevClient, type HttpJevOptions } from "./http.js";
+import { HttpJevClient } from "./http.js";
 
 export function jevClientFromEnv(): JevClient {
   return process.env.JEV_PROVIDER === "http" ? new HttpJevClient() : new MockJevClient();
