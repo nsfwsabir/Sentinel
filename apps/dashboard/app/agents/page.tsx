@@ -1,12 +1,31 @@
-export default function AgentsPage() {
+const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
+
+async function getJSON<T>(path: string): Promise<T[]> {
+  try {
+    const r = await fetch(`${API}${path}`, { cache: "no-store" });
+    if (!r.ok) return [];
+    return (await r.json()) as T[];
+  } catch {
+    return [];
+  }
+}
+
+type Agent = { id: string; name: string; status: string; description?: string };
+
+export default async function AgentsPage() {
+  const agents = await getJSON<Agent>("/v1/agents");
   return (
     <div>
       <h1>Agents</h1>
-      <table><thead><tr><th>Agent</th><th>Status</th><th>Tools</th></tr></thead>
-      <tbody>
-        <tr><td>Research Agent</td><td className="mono">active</td><td className="mono">send_email, query_database</td></tr>
-        <tr><td>Deploy Agent</td><td className="mono">active</td><td className="mono">delete_resource, refund</td></tr>
-      </tbody></table>
+      {agents.length === 0 ? (
+        <p className="muted">No agents registered.</p>
+      ) : (
+        <table><thead><tr><th>Agent</th><th>ID</th><th>Status</th></tr></thead>
+        <tbody>{agents.map((a) => (
+          <tr key={a.id}><td><a href={`/agents/${a.id}`}>{a.name}</a></td>
+          <td className="mono">{a.id}</td><td className="mono">{a.status}</td></tr>
+        ))}</tbody></table>
+      )}
     </div>
   );
 }
