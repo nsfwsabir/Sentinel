@@ -273,12 +273,46 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     store.agents.set(id, next);
     return next;
   });
+  app.get("/v1/agents/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const a = store.agents.get(id);
+    if (!a) return reply.code(404).send({ error: "not found" });
+    const recent = [...store.actions.values()].filter((x) => x.agentId === id).slice(-10).reverse();
+    return { ...a, recentActions: recent };
+  });
+  app.delete("/v1/agents/:id", async (req, reply) => {
+    requireAgentKey(req);
+    const { id } = req.params as { id: string };
+    if (!store.agents.delete(id)) return reply.code(404).send({ error: "not found" });
+    return reply.code(204).send();
+  });
   app.get("/v1/tools", async () => [...store.tools.values()]);
   app.post("/v1/tools", async (req, reply) => {
     requireAgentKey(req);
     const t = ToolSchema.parse(req.body);
     store.tools.set(t.id, t);
     return reply.code(201).send(t);
+  });
+  app.get("/v1/tools/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const t = store.tools.get(id);
+    if (!t) return reply.code(404).send({ error: "not found" });
+    return t;
+  });
+  app.patch("/v1/tools/:id", async (req) => {
+    requireAgentKey(req);
+    const { id } = req.params as { id: string };
+    const cur = store.tools.get(id);
+    if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
+    const next = ToolSchema.parse({ ...cur, ...((req.body ?? {}) as object), id: cur.id });
+    store.tools.set(id, next);
+    return next;
+  });
+  app.delete("/v1/tools/:id", async (req, reply) => {
+    requireAgentKey(req);
+    const { id } = req.params as { id: string };
+    if (!store.tools.delete(id)) return reply.code(404).send({ error: "not found" });
+    return reply.code(204).send();
   });
 
   app.get("/v1/metrics", async () => metrics);

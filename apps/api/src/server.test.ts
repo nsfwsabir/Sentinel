@@ -112,4 +112,25 @@ describe("api", () => {
     expect(r.json().version).toBe(2);
     expect(r.json().enabled).toBe(false);
   });
+
+  it("round-trips agent detail and tool CRUD", async () => {
+    const app = buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const detail = await app.inject({ method: "GET", url: "/v1/agents/research-agent" });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().recentActions).toEqual([]);
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: "/v1/tools/refund",
+      headers: KEY,
+      payload: { riskLevel: "critical" },
+    });
+    expect(patched.json().riskLevel).toBe("critical");
+
+    const gone = await app.inject({ method: "DELETE", url: "/v1/tools/refund", headers: KEY });
+    expect(gone.statusCode).toBe(204);
+    const missing = await app.inject({ method: "GET", url: "/v1/tools/refund" });
+    expect(missing.statusCode).toBe(404);
+  });
 });
