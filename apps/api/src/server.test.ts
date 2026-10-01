@@ -133,4 +133,45 @@ describe("api", () => {
     const missing = await app.inject({ method: "GET", url: "/v1/tools/refund" });
     expect(missing.statusCode).toBe(404);
   });
+
+  it("replays a stored action and dry-runs a candidate policy", async () => {
+    const app = buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: KEY,
+      payload: {
+        agentId: "research-agent",
+        toolId: "send_email",
+        arguments: { to: "external@example.com", attachment: "customers.csv" },
+        context: {},
+      },
+    });
+    const firstId = first.json().decisionId as string;
+    const detail = await app.inject({ method: "GET", url: `/v1/decisions/${firstId}` });
+    const actionId = detail.json().actionId as string;
+
+    const replay = await app.inject({ method: "POST", url: `/v1/actions/${actionId}/replay`, headers: KEY });
+    expect(replay.json().decision).toBe("block");
+    const replayDetail = await app.inject({ method: "GET", url: `/v1/decisions/${replay.json().decisionId}` });
+    expect(replayDetail.json().actionId).toBe(actionId);
+
+    const dry = await app.inject({
+      method: "POST",
+      url: "/v1/policies/dry-run",
+      headers: KEY,
+      payload: {
+        id: "pol_draft",
+        name: "Draft",
+        description: "Customer data must never be sent externally.",
+        severity: "high",
+        mode: "block",
+        enabled: true,
+        version: 1,
+      },
+    });
+    expect(dry.json().evaluated).toBe(1);
+    expect(dry.json().would_block).toBe(1);
+  });
 });

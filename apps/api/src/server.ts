@@ -73,93 +73,79 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     const tool = store.tools.get(parsed.toolId);
     if (!tool) return reply.code(404).send({ error: "unknown tool" });
 
-    const policies = [...store.policies.values()];
-    const { findings, matchedPolicyIds } = evaluateDeterministic(
-      {
-        agentId: parsed.agentId,
-        toolId: parsed.toolId,
-        toolName: tool.name,
-        arguments: parsed.arguments,
-        context: parsed.context,
-      },
-      policies,
-    );
-
-    const decision = await decide({
-      state: {
-        agent: parsed.agentId,
-        task: parsed.task,
-        tool: tool.name,
-        arguments: parsed.arguments,
-        policies: policies.filter((p) => p.enabled).map((p) => p.description),
-        environment: String(parsed.context["env"] ?? parsed.context["environment"] ?? ""),
-      },
-      deterministic: findings,
-      toolRisk: tool.riskLevel,
-      jev,
-    });
-
-    const actionId = `act_${randomUUID().slice(0, 8)}`;
-    const decisionId = `dec_${randomUUID().slice(0, 8)}`;
-    const redacted = redactSecrets(parsed.arguments);
-    store.actions.set(actionId, {
-      id: actionId,
+    return runEvaluation(store, jev, {
+      agent,
+      tool,
       agentId: parsed.agentId,
       toolId: parsed.toolId,
       task: parsed.task,
-      arguments: redacted,
-      createdAt: new Date(),
+      args: parsed.arguments,
+      context: parsed.context,
+      requestId,
+      started,
     });
-    store.decisions.set(decisionId, {
-      id: decisionId,
-      actionId,
-      outcome: decision.outcome,
-      confidence: decision.confidence,
-      reason: decision.reason,
-      policyIds: [...new Set([...matchedPolicyIds, ...decision.policyIds])],
-      createdAt: new Date(),
-      judgments: decision.judgments.map((j, i) => ({
-        id: `jud_${decisionId}_${i}`,
-        decisionId,
-        question: j.question,
-        type: "noul" as const,
-        answer: j.answer,
-        confidence: j.confidence,
-      })),
-      approvalStatus: decision.outcome === "review" ? "pending" : undefined,
-      fallbackUsed: decision.fallbackUsed,
-    });
+  });
 
-    childLogger({
-      request_id: requestId,
-      decision_id: decisionId,
-      agent_id: parsed.agentId,
-      tool: tool.name,
-      policy_ids: matchedPolicyIds,
-      evaluation_duration_ms: Date.now() - started,
-      decision: decision.outcome,
-      confidence: decision.confidence,
-      fallback_used: decision.fallbackUsed,
-    }).info("decision");
-
-    // Best-effort PG audit (managed DATABASE_URL). Never breaks pipeline.
-    persistAudit({
+  // V1.5 decision replay: re-run a stored action through current policies.
+  // Links the new decision to the SAME action for before/after comparison.
+  app.post("/v1/actions/:id/replay", async (req, reply) => {
+    requireAgentKey(req);
+    const { id } = req.params as { id: string };
+    const stored = store.actions.get(id);
+    if (!stored) return reply.code(404).send({ error: "unknown action" });
+    const agent = store.agents.get(stored.agentId);
+    if (!agent || agent.status !== "active") {
+      return reply.code(403).send({ error: "unknown or disabled agent" });
+    }
+    const tool = store.tools.get(stored.toolId);
+    if (!tool) return reply.code(404).send({ error: "unknown tool" });
+    return runEvaluation(store, jev, {
       agent,
       tool,
-      policies,
-      actionId,
-      decisionId,
-      redacted,
-      parsed,
-      decision,
-      evaluationMs: Date.now() - started,
-    }).catch(() => {});
+      agentId: stored.agentId,
+      toolId: stored.toolId,
+      task: stored.task,
+      args: stored.arguments,
+      context: {},
+      requestId: randomUUID(),
+      started: Date.now(),
+      reuseActionId: stored.id,
+    });
+  });
 
+  // V1.5 policy dry-run: deterministic only (no Jev), counts how a
+  // candidate policy would have treated stored actions.
+  app.post("/v1/policies/dry-run", async (req, reply) => {
+    requireAgentKey(req);
+    const candidate = PolicySchema.parse(req.body);
+    const q = (req.query ?? {}) as { limit?: string };
+    const limit = Math.min(Number(q.limit ?? 200) || 200, 1000);
+    const actions = [...store.actions.values()].slice(-limit);
+    let wouldBlock = 0;
+    let wouldReview = 0;
+    const matchedActionIds: string[] = [];
+    for (const a of actions) {
+      const tool = store.tools.get(a.toolId);
+      const { findings } = evaluateDeterministic(
+        { agentId: a.agentId, toolId: a.toolId, toolName: tool?.name, arguments: a.arguments, context: {} },
+        [candidate],
+      );
+      const worst = findings.find((f) => f.outcome === "block")
+        ?? findings.find((f) => f.outcome === "review");
+      if (worst?.outcome === "block") {
+        wouldBlock += 1;
+        matchedActionIds.push(a.id);
+      } else if (worst) {
+        wouldReview += 1;
+        matchedActionIds.push(a.id);
+      }
+    }
     return {
-      decision: decision.outcome,
-      confidence: decision.confidence,
-      reason: decision.reason,
-      decisionId,
+      evaluated: actions.length,
+      would_block: wouldBlock,
+      would_review: wouldReview,
+      would_remain_allowed: actions.length - wouldBlock - wouldReview,
+      matchedActionIds: matchedActionIds.slice(0, 100),
     };
   });
 
@@ -320,8 +306,116 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   return app;
 }
 
-/** Fire-and-forget PG mirror of the in-memory decision. Skips when DATABASE_URL unset. */
-async function persistAudit(input: {
+/** Shared evaluation pipeline (TRD §4), used by evaluate + replay. */
+async function runEvaluation(
+  store: Store,
+  jev: ReturnType<typeof jevClientFromEnv>,
+  input: {
+    agent: { id: string; name: string; description?: string; status: string };
+    tool: { id: string; name: string; description: string; riskLevel: "low" | "medium" | "high" | "critical" };
+    agentId: string;
+    toolId: string;
+    task?: string;
+    args: Record<string, unknown>;
+    context: Record<string, unknown>;
+    requestId: string;
+    started: number;
+    reuseActionId?: string;
+  },
+) {
+  const policies = [...store.policies.values()];
+  const { findings, matchedPolicyIds } = evaluateDeterministic(
+    {
+      agentId: input.agentId,
+      toolId: input.toolId,
+      toolName: input.tool.name,
+      arguments: input.args,
+      context: input.context,
+    },
+    policies,
+  );
+
+  const decision = await decide({
+    state: {
+      agent: input.agentId,
+      task: input.task,
+      tool: input.tool.name,
+      arguments: input.args,
+      policies: policies.filter((p) => p.enabled).map((p) => p.description),
+      environment: String(input.context["env"] ?? input.context["environment"] ?? ""),
+    },
+    deterministic: findings,
+    toolRisk: input.tool.riskLevel,
+    jev,
+  });
+
+  const actionId = input.reuseActionId ?? `act_${randomUUID().slice(0, 8)}`;
+  const decisionId = `dec_${randomUUID().slice(0, 8)}`;
+  const redacted = redactSecrets(input.args);
+  if (!input.reuseActionId) {
+    store.actions.set(actionId, {
+      id: actionId,
+      agentId: input.agentId,
+      toolId: input.toolId,
+      task: input.task,
+      arguments: redacted,
+      createdAt: new Date(),
+    });
+  }
+  store.decisions.set(decisionId, {
+    id: decisionId,
+    actionId,
+    outcome: decision.outcome,
+    confidence: decision.confidence,
+    reason: decision.reason,
+    policyIds: [...new Set([...matchedPolicyIds, ...decision.policyIds])],
+    createdAt: new Date(),
+    judgments: decision.judgments.map((j, i) => ({
+      id: `jud_${decisionId}_${i}`,
+      decisionId,
+      question: j.question,
+      type: "noul" as const,
+      answer: j.answer,
+      confidence: j.confidence,
+    })),
+    approvalStatus: decision.outcome === "review" ? "pending" : undefined,
+    fallbackUsed: decision.fallbackUsed,
+  });
+
+  childLogger({
+    request_id: input.requestId,
+    decision_id: decisionId,
+    agent_id: input.agentId,
+    tool: input.tool.name,
+    policy_ids: matchedPolicyIds,
+    evaluation_duration_ms: Date.now() - input.started,
+    decision: decision.outcome,
+    confidence: decision.confidence,
+    fallback_used: decision.fallbackUsed,
+  }).info("decision");
+
+  // Best-effort PG audit (managed DATABASE_URL). Never breaks pipeline.
+  persistAudit({
+    agent: input.agent,
+    tool: input.tool,
+    policies,
+    actionId,
+    decisionId,
+    redacted,
+    parsed: { agentId: input.agentId, toolId: input.toolId, task: input.task, arguments: input.args, context: input.context },
+    decision,
+    evaluationMs: Date.now() - input.started,
+  }).catch(() => {});
+
+  return {
+    decision: decision.outcome,
+    confidence: decision.confidence,
+    reason: decision.reason,
+    decisionId,
+  };
+}
+
+/** Fire-and-forget PG mirror of the in-memory decision. Skips when DATABASE_URL unset. */async function persistAudit(input: {
   agent: { id: string; name: string; description?: string; status: string };
   tool: { id: string; name: string; description: string; riskLevel: string };
   policies: { id: string; name: string; description: string; severity: string; mode: string; enabled: boolean; version: number }[];
