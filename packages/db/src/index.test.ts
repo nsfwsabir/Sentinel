@@ -38,4 +38,22 @@ describe("db package", () => {
     expect((await checkLimit(key, 2, 60_000)).allowed).toBe(true);
     expect((await checkLimit(key, 2, 60_000)).allowed).toBe(false);
   });
+
+  it("hydrate is a no-op without DATABASE_URL", async () => {
+    const { hydrateFromPg } = await import("./hydrate.js");
+    const target = {
+      agents: new Map(),
+      tools: new Map(),
+      policies: new Map(),
+      actions: new Map(),
+      decisions: new Map(),
+    };
+    const saved = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    try {
+      expect(await hydrateFromPg(target)).toBe(false);
+    } finally {
+      if (saved !== undefined) process.env.DATABASE_URL = saved;
+    }
+  });
 });
