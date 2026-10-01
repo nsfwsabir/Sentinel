@@ -40,15 +40,6 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   seedDefaults(store);
   const app = Fastify({ logger: false });
   const jev = jevClientFromEnv();
-  // TRD §12 metrics — in-memory counters (PG aggregation in Phase 9).
-  const metrics = {
-    decisions_total: 0,
-    allow_total: 0,
-    review_total: 0,
-    block_total: 0,
-    fallback_total: 0,
-    approvals_total: 0,
-  };
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     const status = err.statusCode ?? 500;
@@ -136,6 +127,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
         confidence: j.confidence,
       })),
       approvalStatus: decision.outcome === "review" ? "pending" : undefined,
+      fallbackUsed: decision.fallbackUsed,
     });
 
     childLogger({
@@ -149,10 +141,6 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
       confidence: decision.confidence,
       fallback_used: decision.fallbackUsed,
     }).info("decision");
-
-    metrics.decisions_total += 1;
-    metrics[`${decision.outcome}_total` as "allow_total" | "review_total" | "block_total"] += 1;
-    if (decision.fallbackUsed) metrics.fallback_total += 1;
 
     // Best-effort PG audit (managed DATABASE_URL). Never breaks pipeline.
     persistAudit({
@@ -249,7 +237,6 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     // REVIEW is first-class: every approval audited, never auto-converted (§20)
     const next = { ...d, approvalStatus: status as "approved" | "rejected" };
     store.decisions.set(id, next);
-    metrics.approvals_total += 1;
     childLogger({ decision_id: id, decision: status }).info("approval");
     return next;
   };
@@ -315,7 +302,20 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     return reply.code(204).send();
   });
 
-  app.get("/v1/metrics", async () => metrics);
+  // TRD §12 metrics — derived from decisions so they survive restarts via PG hydrate.
+  app.get("/v1/metrics", async () => {
+    const all = [...store.decisions.values()];
+    const count = (f: (d: (typeof all)[number]) => boolean) => all.filter(f).length;
+    return {
+      decisions_total: all.length,
+      allow_total: count((d) => d.outcome === "allow"),
+      review_total: count((d) => d.outcome === "review"),
+      block_total: count((d) => d.outcome === "block"),
+      fallback_total: count((d) => d.fallbackUsed === true),
+      approvals_total: count((d) => d.approvalStatus === "approved" || d.approvalStatus === "rejected"),
+      pending_total: count((d) => d.outcome === "review" && (!d.approvalStatus || d.approvalStatus === "pending")),
+    };
+  });
 
   return app;
 }

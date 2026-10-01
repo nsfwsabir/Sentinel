@@ -114,6 +114,7 @@ export async function hydrateFromPg(target: HydrateTarget): Promise<boolean> {
       policyIds: (dec.policyIds ?? []) as string[],
       createdAt: dec.createdAt,
       judgments: judgmentsByDecision.get(dec.id) ?? [],
+      fallbackUsed: dec.fallbackUsed,
       approvalStatus: (["pending", "approved", "rejected"].includes(dec.approvalStatus ?? "")
         ? dec.approvalStatus
         : undefined) as "pending" | "approved" | "rejected" | undefined,

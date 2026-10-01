@@ -18,6 +18,7 @@ export type StoredDecision = Decision & {
   reason: string;
   confidence: number;
   approvalStatus?: ApprovalStatus;
+  fallbackUsed?: boolean;
 };
 
 export interface Store {
