@@ -20,6 +20,21 @@ export default function PoliciesPage() {
     load();
   }, []);
 
+  async function toggle(id: string, enabled: boolean) {
+    setError("");
+    const r = await fetch("/api/policies", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, enabled }),
+    });
+    if (!r.ok) {
+      const b = await r.json().catch(() => ({}));
+      setError((b as { error?: string }).error ?? "update failed");
+      return;
+    }
+    setPolicies((ps) => ps.map((p) => (p.id === id ? { ...p, enabled } : p)));
+  }
+
   async function save() {
     setError("");
     const r = await fetch("/api/policies", {
@@ -47,10 +62,13 @@ export default function PoliciesPage() {
     <div>
       <h1>Policies</h1>
       {policies.length > 0 && (
-        <table><thead><tr><th>Name</th><th>Description</th><th>Enforcement</th><th>Enabled</th></tr></thead>
+        <table><thead><tr><th>Name</th><th>Description</th><th>Enforcement</th><th>Enabled</th><th></th></tr></thead>
         <tbody>{policies.map((p) => (
           <tr key={p.id}><td>{p.name}</td><td className="muted">{p.description}</td>
-          <td className="mono">{p.mode}</td><td className="mono">{String(p.enabled)}</td></tr>
+          <td className="mono">{p.mode}</td><td className="mono">{String(p.enabled)}</td>
+          <td><button className="secondary" onClick={() => toggle(p.id, !p.enabled)}>
+            {p.enabled ? "Disable" : "Enable"}
+          </button></td></tr>
         ))}</tbody></table>
       )}
       <h2>New policy</h2>

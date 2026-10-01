@@ -99,4 +99,17 @@ describe("api", () => {
     const metrics = await app.inject({ method: "GET", url: "/v1/metrics" });
     expect(metrics.json().decisions_total).toBe(1);
   });
+
+  it("bumps policy version on patch, ignoring client version", async () => {
+    const app = buildServer(createMemoryStore());
+    const r = await app.inject({
+      method: "PATCH",
+      url: "/v1/policies/pol_pay",
+      headers: { "x-api-key": "dev-key-1" },
+      payload: { enabled: false, version: 99 },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().version).toBe(2);
+    expect(r.json().enabled).toBe(false);
+  });
 });

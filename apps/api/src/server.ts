@@ -197,7 +197,8 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     const { id } = req.params as { id: string };
     const cur = store.policies.get(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
-    const next = { ...cur, ...((req.body ?? {}) as object) };
+    // Every mutation bumps version; client-supplied id/version ignored.
+    const next = { ...cur, ...((req.body ?? {}) as object), id: cur.id, version: cur.version + 1 };
     const p = PolicySchema.parse(next);
     store.policies.set(id, p);
     return p;

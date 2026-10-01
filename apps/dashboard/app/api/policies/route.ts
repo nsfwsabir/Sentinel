@@ -15,3 +15,14 @@ export async function POST(req: Request) {
   });
   return Response.json(await r.json(), { status: r.status });
 }
+
+export async function PATCH(req: Request) {
+  const { id, ...patch } = (await req.json()) as { id: string } & Record<string, unknown>;
+  if (!id) return Response.json({ error: "id required" }, { status: 400 });
+  const r = await fetch(`${API}/v1/policies/${id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "x-api-key": KEY },
+    body: JSON.stringify(patch),
+  });
+  return Response.json(await r.json(), { status: r.status });
+}
