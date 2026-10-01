@@ -3,6 +3,7 @@ import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
 import { decide } from "@sentinel/decision-engine";
 import { jevClientFromEnv } from "@sentinel/jev-client";
 import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
+import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
 import { childLogger } from "@sentinel/logger";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
@@ -24,15 +25,11 @@ function requireAgentKey(req: { headers: Record<string, string | string[] | unde
   }
 }
 
-function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }) {
-  // V1 basic gate: ADMIN_USER + ADMIN_PASS (managed secret). No custom crypto for hashing here;
-  // production should compare against scrypt hash via node:crypto (stdlib, not custom).
-  const user = process.env.ADMIN_USER ?? "admin";
-  const pass = process.env.ADMIN_PASS ?? "admin";
-  const raw = req.headers["authorization"];
-  const val = Array.isArray(raw) ? raw[0] : (raw ?? "");
-  const expected = "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
-  if (val !== expected) {
+async function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }) {
+  // Production: ADMIN_PASS_HASH (scrypt). Dev fallback: ADMIN_PASS plaintext.
+  // Real enforcement lives here (node:crypto); the dashboard middleware gate is defense-in-depth only.
+  const creds = parseBasicAuth(req.headers["authorization"]);
+  if (!creds || !(await verifyAdminCredentials(creds.user, creds.password))) {
     const err = new Error("unauthorized: admin approval requires basic auth") as Error & { statusCode?: number };
     err.statusCode = 401;
     throw err;
@@ -241,7 +238,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     [...store.decisions.values()].filter((d) => d.outcome === "review"),
   );
   const setApproval = (status: "approved" | "rejected") => async (req: unknown, reply: unknown) => {
-    requireAdmin(req as never);
+    await requireAdmin(req as never);
     const { id } = (req as { params: { id: string } }).params;
     const d = store.decisions.get(id);
     if (!d) {
