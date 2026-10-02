@@ -73,12 +73,11 @@ describe("laya provider", () => {
     expect(JSON.stringify(out)).not.toContain("x@y.com");
   });
 
-  it("throws on missing key", async () => {
+  it("rejects missing key in hosted mode at construction", async () => {
     const saved = process.env.LAYA_API_KEY;
     delete process.env.LAYA_API_KEY;
     try {
-      const provider = new LayaJudgmentProvider({ apiUrl: "http://laya", apiKey: "" });
-      await expect(provider.judge(state)).rejects.toThrow(/LAYA_API_KEY/);
+      expect(() => new LayaJudgmentProvider({ apiKey: "" })).toThrow(/LAYA_API_KEY/);
     } finally {
       if (saved !== undefined) process.env.LAYA_API_KEY = saved;
     }

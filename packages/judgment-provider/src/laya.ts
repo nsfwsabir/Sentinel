@@ -26,6 +26,8 @@ const QUESTIONS: Record<FocusedQuestion, string> = {
   targets_production: "Does this action target production infrastructure or data?",
 };
 
+import { resolveLayaConfig } from "./config.js";
+
 export type LayaProviderOptions = {
   apiUrl: string;
   apiKey: string;
@@ -43,19 +45,23 @@ export class LayaJudgmentProvider implements JudgmentProvider {
   private fetchImpl: typeof fetch;
 
   constructor(opts?: Partial<LayaProviderOptions>) {
-    // Default: hosted Laya Studio. Self-hosted `laya-serve` speaks the same
-    // shape — point LAYA_API_URL at it (e.g. http://localhost:8000/v1/systemone).
-    this.apiUrl = opts?.apiUrl ?? process.env.LAYA_API_URL ?? "https://api.laya.studio/v1/systemone";
-    this.apiKey = opts?.apiKey ?? process.env.LAYA_API_KEY ?? "";
-    this.model = opts?.model ?? process.env.LAYA_MODEL ?? undefined;
-    this.timeoutMs = opts?.timeoutMs ?? Number(process.env.LAYA_TIMEOUT_MS ?? 8000);
+    // Validated config: hosted default, custom endpoint via LAYA_API_URL.
+    // Sentinel never hosts Laya; explicit opts merge over process env.
+    const cfg = resolveLayaConfig({
+      ...process.env,
+      ...(opts?.apiUrl !== undefined ? { LAYA_API_URL: opts.apiUrl } : {}),
+      ...(opts?.apiKey !== undefined ? { LAYA_API_KEY: opts.apiKey } : {}),
+      ...(opts?.model !== undefined ? { LAYA_MODEL: opts.model } : {}),
+      ...(opts?.timeoutMs !== undefined ? { LAYA_TIMEOUT_MS: String(opts.timeoutMs) } : {}),
+    });
+    this.apiUrl = cfg.apiUrl;
+    this.apiKey = cfg.apiKey;
+    this.model = cfg.model;
+    this.timeoutMs = cfg.timeoutMs;
     this.fetchImpl = opts?.fetchImpl ?? fetch;
   }
 
   async judge(state: EvalState): Promise<Omit<Judgment, "id" | "decisionId">[]> {
-    if (!this.apiKey) {
-      throw new Error("Laya unavailable: LAYA_API_KEY not configured");
-    }
     const questions: Record<string, { type: "noul"; instructions: string }> = {};
     for (const [qid, instructions] of Object.entries(QUESTIONS)) {
       questions[qid] = { type: "noul", instructions };
