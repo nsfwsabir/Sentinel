@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { MockJevClient } from "./index.js";
+import { MockJudgmentProvider } from "./index.js";
 
-describe("mock jev", () => {
+describe("mock provider", () => {
   it("flags exfil as violation with high confidence", async () => {
-    const jev = new MockJevClient();
-    const out = await jev.judge({
+    const provider = new MockJudgmentProvider();
+    const out = await provider.judge({
       agent: "research-agent",
       tool: "send_email",
       arguments: { to: "external@example.com", attachment: "customers.csv" },
@@ -16,8 +16,8 @@ describe("mock jev", () => {
   });
 
   it("does not flag benign dev query", async () => {
-    const jev = new MockJevClient();
-    const out = await jev.judge({
+    const provider = new MockJudgmentProvider();
+    const out = await provider.judge({
       agent: "a",
       tool: "query_database",
       arguments: { q: "select 1" },

@@ -1,6 +1,8 @@
 import type { Judgment } from "@sentinel/schemas";
 
-// AGENTS.md §9: Jev answers focused questions, never "should we allow this?"
+// AGENTS.md: Laya answers focused questions, never "should we allow this?"
+// The provider is judgment-only; policy, precedence, and thresholds live in
+// @sentinel/decision-engine. Laya must never become the policy engine.
 export type EvalState = {
   agent: string;
   task?: string;
@@ -17,7 +19,7 @@ export type FocusedQuestion =
   | "destructive"
   | "targets_production";
 
-export interface JevClient {
+export interface JudgmentProvider {
   judge(state: EvalState): Promise<Omit<Judgment, "id" | "decisionId">[]>;
   readonly name: string;
 }
@@ -27,10 +29,10 @@ function textOf(state: EvalState): string {
 }
 
 /**
- * Deterministic stand-in for Jev (JEV_PROVIDER=mock).
- * Mirrors the real question shapes so HttpJevClient can swap in later.
+ * Deterministic stand-in (JUDGMENT_PROVIDER=mock).
+ * Mirrors the real question shapes so LayaJudgmentProvider can swap in.
  */
-export class MockJevClient implements JevClient {
+export class MockJudgmentProvider implements JudgmentProvider {
   readonly name = "mock";
 
   async judge(state: EvalState): Promise<Omit<Judgment, "id" | "decisionId">[]> {
@@ -74,12 +76,12 @@ export class MockJevClient implements JevClient {
 }
 
 /**
- * Real Jev over HTTP — see ./http.ts. Re-exported here so consumers
- * keep a single import. Kept server-side only (TRD §6).
+ * Laya over HTTP — see ./laya.ts. Re-exported here so consumers
+ * keep a single import. Kept server-side only.
  */
-export { HttpJevClient, type HttpJevOptions } from "./http.js";
-import { HttpJevClient } from "./http.js";
+export { LayaJudgmentProvider, type LayaProviderOptions } from "./laya.js";
+import { LayaJudgmentProvider } from "./laya.js";
 
-export function jevClientFromEnv(): JevClient {
-  return process.env.JEV_PROVIDER === "http" ? new HttpJevClient() : new MockJevClient();
+export function providerFromEnv(): JudgmentProvider {
+  return process.env.JUDGMENT_PROVIDER === "laya" ? new LayaJudgmentProvider() : new MockJudgmentProvider();
 }

@@ -14,7 +14,7 @@
   "dependencies": {
     "@sentinel/db": "workspace:*",
     "@sentinel/decision-engine": "workspace:*",
-    "@sentinel/jev-client": "workspace:*",
+    "@sentinel/judgment-provider": "workspace:*",
     "@sentinel/logger": "workspace:*",
     "@sentinel/policy-engine": "workspace:*",
     "@sentinel/schemas": "workspace:*",

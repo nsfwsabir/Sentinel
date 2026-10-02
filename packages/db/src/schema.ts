@@ -49,7 +49,7 @@ export const decisions = pgTable("decisions", {
   approvalStatus: text("approval_status"),
   fallbackUsed: boolean("fallback_used").notNull().default(false),
   evaluationDurationMs: integer("evaluation_duration_ms"),
-  jevDurationMs: integer("jev_duration_ms"),
+  providerDurationMs: integer("provider_duration_ms"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

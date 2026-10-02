@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { DecisionOutcome } from "@sentinel/schemas";
 export type Outcome = z.infer<typeof DecisionOutcome>;
 import type { DeterministicFinding } from "@sentinel/policy-engine";
-import type { JevClient, EvalState } from "@sentinel/jev-client";
+import type { JudgmentProvider, EvalState } from "@sentinel/judgment-provider";
 
 export type Thresholds = {
   highConfidence: number;
@@ -20,7 +20,7 @@ export type DecideInput = {
   state: EvalState;
   deterministic: DeterministicFinding[];
   toolRisk?: "low" | "medium" | "high" | "critical";
-  jev: JevClient;
+  provider: JudgmentProvider;
   thresholds?: Thresholds;
 };
 
@@ -35,7 +35,7 @@ export type DecideResult = {
 
 /**
  * Decision precedence BLOCK > REVIEW > ALLOW (AGENTS.md §19).
- * Never converts REVIEW→ALLOW automatically; Jev outage fails closed (§18).
+ * Never converts REVIEW→ALLOW automatically; provider outage fails closed (§18).
  */
 export async function decide(input: DecideInput): Promise<DecideResult> {
   const thresholds = input.thresholds ?? thresholdsFromEnv();
@@ -55,7 +55,7 @@ export async function decide(input: DecideInput): Promise<DecideResult> {
   const started = Date.now();
   void started;
   try {
-    const raw = await input.jev.judge(input.state);
+    const raw = await input.provider.judge(input.state);
     const judgments = raw.map((j) => ({
       question: j.question,
       answer: j.answer,
@@ -100,7 +100,7 @@ export async function decide(input: DecideInput): Promise<DecideResult> {
   } catch (err) {
     // Fail closed (TRD §11): high/critical → BLOCK, medium → REVIEW, low → REVIEW unless explicitly low-risk allow.
     const risk = input.toolRisk ?? "high";
-    const reason = `Jev evaluation unavailable (${err instanceof Error ? err.message : "unknown"}). Fail-closed fallback.`;
+    const reason = `Judgment provider unavailable (${err instanceof Error ? err.message : "unknown"}). Fail-closed fallback.`;
     if (risk === "high" || risk === "critical" || detReview) {
       const wantsBlock = risk === "critical" || detReview?.outcome === "block";
       return {

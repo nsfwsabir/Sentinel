@@ -10,7 +10,7 @@ export type LogFields = {
   tool?: string;
   policy_ids?: string[];
   evaluation_duration_ms?: number;
-  jev_duration_ms?: number;
+  provider_duration_ms?: number;
   decision?: string;
   confidence?: number;
   fallback_used?: boolean;

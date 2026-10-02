@@ -42,7 +42,7 @@ export default function SimulatePage() {
         <label>Arguments<textarea rows={6} value={args} onChange={(e) => setArgs(e.target.value)} className="mono" /></label>
         <button onClick={evaluate}>Evaluate action</button>
       </div>
-      {error && <div className="card"><p>Jev evaluation unavailable</p><p className="muted">{error}</p></div>}
+      {error && <div className="card"><p>Evaluation unavailable</p><p className="muted">{error}</p></div>}
       {result && (
         <div className="card">
           <p><span className={`badge ${result.decision}`}>{result.decision.toUpperCase()}</span></p>

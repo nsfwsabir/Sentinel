@@ -1,7 +1,7 @@
 import { createMemoryStore, seedDefaults, type Store } from "./store.js";
 import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
 import { decide } from "@sentinel/decision-engine";
-import { jevClientFromEnv } from "@sentinel/jev-client";
+import { providerFromEnv } from "@sentinel/judgment-provider";
 import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
 import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
 import { childLogger } from "@sentinel/logger";
@@ -39,7 +39,7 @@ async function requireAdmin(req: { headers: Record<string, string | string[] | u
 export function buildServer(store: Store = createMemoryStore()): FastifyInstance {
   seedDefaults(store);
   const app = Fastify({ logger: false });
-  const jev = jevClientFromEnv();
+  const provider = providerFromEnv();
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     const status = err.statusCode ?? 500;
@@ -73,7 +73,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     const tool = store.tools.get(parsed.toolId);
     if (!tool) return reply.code(404).send({ error: "unknown tool" });
 
-    return runEvaluation(store, jev, {
+    return runEvaluation(store, provider, {
       agent,
       tool,
       agentId: parsed.agentId,
@@ -99,7 +99,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     }
     const tool = store.tools.get(stored.toolId);
     if (!tool) return reply.code(404).send({ error: "unknown tool" });
-    return runEvaluation(store, jev, {
+    return runEvaluation(store, provider, {
       agent,
       tool,
       agentId: stored.agentId,
@@ -113,7 +113,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     });
   });
 
-  // V1.5 policy dry-run: deterministic only (no Jev), counts how a
+  // V1.5 policy dry-run: deterministic only (no provider call), counts how a
   // candidate policy would have treated stored actions.
   app.post("/v1/policies/dry-run", async (req, reply) => {
     requireAgentKey(req);
@@ -309,7 +309,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
 /** Shared evaluation pipeline (TRD §4), used by evaluate + replay. */
 async function runEvaluation(
   store: Store,
-  jev: ReturnType<typeof jevClientFromEnv>,
+  provider: ReturnType<typeof providerFromEnv>,
   input: {
     agent: { id: string; name: string; description?: string; status: string };
     tool: { id: string; name: string; description: string; riskLevel: "low" | "medium" | "high" | "critical" };
@@ -346,7 +346,7 @@ async function runEvaluation(
     },
     deterministic: findings,
     toolRisk: input.tool.riskLevel,
-    jev,
+    provider,
   });
 
   const actionId = input.reuseActionId ?? `act_${randomUUID().slice(0, 8)}`;

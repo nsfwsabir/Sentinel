@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sentinel/jev-client": "workspace:*",
+    "@sentinel/judgment-provider": "workspace:*",
     "@sentinel/policy-engine": "workspace:*",
     "@sentinel/schemas": "workspace:*",
     "zod": "^3.23.8"

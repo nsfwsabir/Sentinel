@@ -9,7 +9,7 @@ export type AuditRecord = {
   tool: string;
   policy_ids: string[];
   evaluation_duration_ms: number;
-  jev_duration_ms?: number;
+  provider_duration_ms?: number;
   decision: string;
   confidence?: number;
   fallback_used: boolean;
@@ -23,7 +23,7 @@ export function buildAuditRecord(input: {
   tool: string;
   policyIds: string[];
   evaluationDurationMs: number;
-  jevDurationMs?: number;
+  providerDurationMs?: number;
   decision: string;
   confidence?: number;
   fallbackUsed: boolean;
@@ -36,7 +36,7 @@ export function buildAuditRecord(input: {
     tool: input.tool,
     policy_ids: input.policyIds,
     evaluation_duration_ms: input.evaluationDurationMs,
-    jev_duration_ms: input.jevDurationMs,
+    provider_duration_ms: input.providerDurationMs,
     decision: input.decision,
     confidence: input.confidence,
     fallback_used: input.fallbackUsed,

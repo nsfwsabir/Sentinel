@@ -41,7 +41,7 @@ describe("adversarial", () => {
         context: {},
       },
     });
-    // Either deterministic credential rule or Jev sensitive rule must fire
+    // Either deterministic credential rule or the provider's sensitive rule must fire
     expect(["block", "review"]).toContain(r.json().decision);
   });
 
