@@ -18,6 +18,9 @@ out/
 .env*.local
 !.env.example
 
+# generated
+tests/calibration/report.csv
+
 # logs / os
 *.log
 .DS_Store
