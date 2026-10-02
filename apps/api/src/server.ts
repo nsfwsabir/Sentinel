@@ -4,26 +4,10 @@ import { decide } from "@sentinel/decision-engine";
 import { providerFromEnv } from "@sentinel/judgment-provider";
 import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
 import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
+import { authenticateAgent, type AgentAuthOptions } from "./agentAuth.js";
 import { childLogger } from "@sentinel/logger";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
-
-export function agentKeys(): string[] {
-  return (process.env.AGENT_API_KEYS ?? "dev-key-1")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function requireAgentKey(req: { headers: Record<string, string | string[] | undefined> }) {
-  const raw = req.headers["x-api-key"] ?? req.headers["authorization"];
-  const key = Array.isArray(raw) ? raw[0] : (raw ?? "").replace(/^Bearer\s+/i, "");
-  if (!key || !agentKeys().includes(key)) {
-    const err = new Error("unauthorized: missing or invalid agent API key") as Error & { statusCode?: number };
-    err.statusCode = 401;
-    throw err;
-  }
-}
 
 async function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }) {
   // Production: ADMIN_PASS_HASH (scrypt). Dev fallback: ADMIN_PASS plaintext.
@@ -36,10 +20,11 @@ async function requireAdmin(req: { headers: Record<string, string | string[] | u
   }
 }
 
-export function buildServer(store: Store = createMemoryStore()): FastifyInstance {
+export function buildServer(store: Store = createMemoryStore(), opts?: { agentAuth?: AgentAuthOptions }): FastifyInstance {
   seedDefaults(store);
   const app = Fastify({ logger: false });
   const provider = providerFromEnv();
+  const agentAuth = opts?.agentAuth;
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     const status = err.statusCode ?? 500;
@@ -50,10 +35,16 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
 
   // TRD §4 evaluation pipeline
   app.post("/v1/actions/evaluate", async (req, reply) => {
-    requireAgentKey(req);
+    const identity = await authenticateAgent(req.headers, agentAuth);
     const requestId = randomUUID();
     const started = Date.now();
     const parsed = EvaluateRequestSchema.parse(req.body);
+
+    // OIDC-bound identity overrides self-assertion: a token for agent X
+    // cannot submit actions as agent Y.
+    if (identity.kind === "oidc" && parsed.agentId !== identity.agentId) {
+      return reply.code(403).send({ error: "agent identity mismatch" });
+    }
 
     // Rate limit per agent (Redis when configured, memory otherwise).
     // Fail-open: limiter errors never block evaluation.
@@ -89,7 +80,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   // V1.5 decision replay: re-run a stored action through current policies.
   // Links the new decision to the SAME action for before/after comparison.
   app.post("/v1/actions/:id/replay", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
     const stored = store.actions.get(id);
     if (!stored) return reply.code(404).send({ error: "unknown action" });
@@ -116,7 +107,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   // V1.5 policy dry-run: deterministic only (no provider call), counts how a
   // candidate policy would have treated stored actions.
   app.post("/v1/policies/dry-run", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const candidate = PolicySchema.parse(req.body);
     const q = (req.query ?? {}) as { limit?: string };
     const limit = Math.min(Number(q.limit ?? 200) || 200, 1000);
@@ -152,7 +143,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   // Policies CRUD (TRD §9)
   app.get("/v1/policies", async () => [...store.policies.values()]);
   app.post("/v1/policies", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const p = PolicySchema.parse(req.body);
     store.policies.set(p.id, p);
     return reply.code(201).send(p);
@@ -164,7 +155,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     return p;
   });
   app.patch("/v1/policies/:id", async (req) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
     const cur = store.policies.get(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
@@ -175,7 +166,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     return p;
   });
   app.delete("/v1/policies/:id", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
     if (!store.policies.delete(id)) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
@@ -232,13 +223,13 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
   // Agents + tools — PRD §9 success criteria steps 1 & 3.
   app.get("/v1/agents", async () => [...store.agents.values()]);
   app.post("/v1/agents", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const a = AgentSchema.parse({ ...(req.body as object), createdAt: new Date().toISOString() });
     store.agents.set(a.id, a);
     return reply.code(201).send(a);
   });
   app.patch("/v1/agents/:id", async (req) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
     const cur = store.agents.get(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
@@ -254,14 +245,14 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     return { ...a, recentActions: recent };
   });
   app.delete("/v1/agents/:id", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
     if (!store.agents.delete(id)) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
   });
   app.get("/v1/tools", async () => [...store.tools.values()]);
   app.post("/v1/tools", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const t = ToolSchema.parse(req.body);
     store.tools.set(t.id, t);
     return reply.code(201).send(t);
@@ -273,7 +264,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     return t;
   });
   app.patch("/v1/tools/:id", async (req) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
     const cur = store.tools.get(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
@@ -282,7 +273,7 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     return next;
   });
   app.delete("/v1/tools/:id", async (req, reply) => {
-    requireAgentKey(req);
+    await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
     if (!store.tools.delete(id)) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();

@@ -1,6 +1,26 @@
 import { describe, it, expect } from "vitest";
+import { generateKeyPair, exportJWK, SignJWT, createLocalJWKSet } from "jose";
 import { buildServer } from "./server.js";
 import { createMemoryStore } from "./store.js";
+import type { AgentAuthOptions } from "./agentAuth.js";
+
+const ISS = "https://issuer.example.com";
+
+async function oidcOpts(): Promise<{ opts: AgentAuthOptions; tokenFor: (sub: string) => Promise<string> }> {
+  const { publicKey, privateKey } = await generateKeyPair("RS256");
+  const jwk = await exportJWK(publicKey);
+  const jwks = createLocalJWKSet({ keys: [{ ...jwk, kid: "k1" }] });
+  return {
+    opts: { issuers: [ISS], audience: "sentinel", staticKeys: [], jwksFor: () => jwks },
+    tokenFor: (sub: string) =>
+      new SignJWT({ sub })
+        .setProtectedHeader({ alg: "RS256", kid: "k1" })
+        .setIssuer(ISS)
+        .setAudience("sentinel")
+        .setExpirationTime("5m")
+        .sign(privateKey),
+  };
+}
 
 describe("api", () => {
   it("blocks hero exfil end-to-end", async () => {
@@ -187,6 +207,33 @@ describe("api", () => {
       if (savedKey === undefined) delete process.env.LAYA_API_KEY;
       else process.env.LAYA_API_KEY = savedKey;
     }
+  });
+
+  it("binds token identity to agentId: mismatch 403s, match evaluates", async () => {
+    const { opts, tokenFor } = await oidcOpts();
+    const app = buildServer(createMemoryStore(), { agentAuth: opts });
+    const payload = (agentId: string) => ({
+      agentId,
+      toolId: "query_database",
+      arguments: { q: "select 1" },
+      context: { env: "development" },
+    });
+    const spoof = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { authorization: `Bearer ${await tokenFor("research-agent")}` },
+      payload: payload("deploy-agent"),
+    });
+    expect(spoof.statusCode).toBe(403);
+
+    const honest = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { authorization: `Bearer ${await tokenFor("research-agent")}` },
+      payload: payload("research-agent"),
+    });
+    expect(honest.statusCode).toBe(200);
+    expect(honest.json().decision).toBe("allow");
   });
 
   it("replays a stored action and dry-runs a candidate policy", async () => {

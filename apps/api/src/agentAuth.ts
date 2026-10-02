@@ -1,0 +1,108 @@
+import { timingSafeEqual } from "node:crypto";
+import { jwtVerify, decodeJwt, createRemoteJWKSet, type JWTVerifyGetKey } from "jose";
+
+// Machine identity for agents (BYO OIDC issuer). A verified token binds
+// `sub` → agentId, closing the self-asserted-agentId gap: any static-key
+// holder could previously impersonate any agent. Static keys remain as a
+// deprecated dev fallback (warned once when OIDC is configured).
+export type AgentIdentity =
+  | { kind: "oidc"; agentId: string }
+  | { kind: "static" };
+
+export type AgentAuthOptions = {
+  issuers: string[];
+  audience: string;
+  staticKeys: string[];
+  /** Override JWKS lookup (tests use a local set; prod uses remote discovery). */
+  jwksFor?: (iss: string) => JWTVerifyGetKey;
+};
+
+const remoteJwks = new Map<string, JWTVerifyGetKey>();
+let warnedFallback = false;
+
+export function agentAuthFromEnv(): AgentAuthOptions {
+  return {
+    issuers: (process.env.OIDC_ISSUERS ?? "")
+      .split(",")
+      .map((s) => s.trim().replace(/\/$/, ""))
+      .filter(Boolean),
+    audience: process.env.OIDC_AUDIENCE ?? "sentinel",
+    staticKeys: (process.env.AGENT_API_KEYS ?? "dev-key-1")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  };
+}
+
+function bearerToken(header: string | string[] | undefined): string | null {
+  const val = Array.isArray(header) ? header[0] : (header ?? "");
+  const m = /^Bearer\s+(.+)$/i.exec(val.trim());
+  return m ? m[1] : null;
+}
+
+function staticMatch(token: string, keys: string[]): boolean {
+  const buf = Buffer.from(token);
+  return keys.some((k) => {
+    const kb = Buffer.from(k);
+    return buf.length === kb.length && timingSafeEqual(buf, kb);
+  });
+}
+
+/** Authenticate an agent request. Throws { statusCode: 401 } on failure. */
+export async function authenticateAgent(
+  headers: Record<string, string | string[] | undefined>,
+  opts: AgentAuthOptions = agentAuthFromEnv(),
+): Promise<AgentIdentity> {
+  const fail = (): never => {
+    const err = new Error("unauthorized: missing or invalid agent credential") as Error & { statusCode?: number };
+    err.statusCode = 401;
+    throw err;
+  };
+
+  // Legacy static keys via x-api-key or opaque bearer (unchanged behavior).
+  const staticToken = (() => {
+    const h = headers["x-api-key"];
+    const v = Array.isArray(h) ? h[0] : h;
+    if (v) return v;
+    const b = bearerToken(headers["authorization"]);
+    // JWT-shaped tokens go down the OIDC path when issuers are configured.
+    if (b && (b.split(".").length !== 3 || opts.issuers.length === 0)) return b;
+    return null;
+  })();
+  if (staticToken && staticMatch(staticToken, opts.staticKeys)) {
+    if (opts.issuers.length > 0 && !warnedFallback) {
+      warnedFallback = true;
+      console.warn("sentinel: agent used deprecated static key while OIDC issuers are configured");
+    }
+    return { kind: "static" };
+  }
+
+  const token: string = bearerToken(headers["authorization"]) ?? fail();
+  if (opts.issuers.length === 0) fail();
+  let iss: string | undefined;
+  try {
+    iss = decodeJwt(token).iss?.replace(/\/$/, "");
+  } catch {
+    fail();
+  }
+  if (!iss || !opts.issuers.includes(iss)) fail();
+  try {
+    const getKey =
+      opts.jwksFor?.(iss!) ??
+      (() => {
+        let set = remoteJwks.get(iss!);
+        if (!set) {
+          set = createRemoteJWKSet(new URL(`${iss}/.well-known/jwks.json`));
+          remoteJwks.set(iss!, set);
+        }
+        return set;
+      })();
+    const { payload } = await jwtVerify(token!, getKey, { issuer: iss, audience: opts.audience });
+    if (typeof payload.sub !== "string" || payload.sub.length === 0) fail();
+    return { kind: "oidc", agentId: payload.sub! };
+  } catch (err) {
+    if ((err as { statusCode?: number }).statusCode === 401) throw err;
+    fail();
+  }
+  throw new Error("unreachable");
+}

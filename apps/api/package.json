@@ -19,6 +19,7 @@
     "@sentinel/policy-engine": "workspace:*",
     "@sentinel/schemas": "workspace:*",
     "fastify": "^5.2.0",
+    "jose": "^6.2.12",
     "zod": "^3.23.8"
   },
   "devDependencies": {
