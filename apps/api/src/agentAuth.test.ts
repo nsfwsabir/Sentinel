@@ -39,7 +39,18 @@ describe("agentAuth", () => {
     expect(await authenticateAgent(authz(token), opts)).toEqual({
       kind: "oidc",
       agentId: "research-agent",
+      scopes: [],
     });
+  });
+
+  it("parses OAuth scopes from scope string or scp array", async () => {
+    const { opts, sign } = await setup();
+    const withScope = await sign({ sub: "x", scope: "sentinel:evaluate sentinel:approvers" });
+    const r1 = await authenticateAgent(authz(withScope), opts);
+    expect(r1).toEqual({ kind: "oidc", agentId: "x", scopes: ["sentinel:evaluate", "sentinel:approvers"] });
+    const withScp = await sign({ sub: "y", scp: ["sentinel:approvers"] });
+    const r2 = await authenticateAgent(authz(withScp), opts);
+    expect(r2).toEqual({ kind: "oidc", agentId: "y", scopes: ["sentinel:approvers"] });
   });
 
   it("rejects forged tokens", async () => {

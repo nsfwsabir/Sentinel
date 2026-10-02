@@ -6,14 +6,14 @@ import type { AgentAuthOptions } from "./agentAuth.js";
 
 const ISS = "https://issuer.example.com";
 
-async function oidcOpts(): Promise<{ opts: AgentAuthOptions; tokenFor: (sub: string) => Promise<string> }> {
+async function oidcOpts(): Promise<{ opts: AgentAuthOptions; tokenFor: (sub: string, claims?: Record<string, unknown>) => Promise<string> }> {
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk = await exportJWK(publicKey);
   const jwks = createLocalJWKSet({ keys: [{ ...jwk, kid: "k1" }] });
   return {
     opts: { issuers: [ISS], audience: "sentinel", staticKeys: [], jwksFor: () => jwks },
-    tokenFor: (sub: string) =>
-      new SignJWT({ sub })
+    tokenFor: (sub: string, claims: Record<string, unknown> = {}) =>
+      new SignJWT({ sub, ...claims })
         .setProtectedHeader({ alg: "RS256", kid: "k1" })
         .setIssuer(ISS)
         .setAudience("sentinel")
@@ -234,6 +234,42 @@ describe("api", () => {
     });
     expect(honest.statusCode).toBe(200);
     expect(honest.json().decision).toBe("allow");
+  });
+
+  it("approves with approver-scoped token, rejects scope-less and static callers", async () => {
+    const { opts, tokenFor } = await oidcOpts();
+    const app = buildServer(createMemoryStore(), { agentAuth: { ...opts, staticKeys: ["dev-key-1"] } });
+    const KEY = { "x-api-key": "dev-key-1" };
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: KEY,
+      payload: { agentId: "deploy-agent", toolId: "refund", arguments: { amount: 500 }, context: {} },
+    });
+    const id = created.json().decisionId as string;
+
+    // Static agent key is never enough for approvals.
+    const staticCall = await app.inject({ method: "POST", url: `/v1/approvals/${id}/approve`, headers: KEY });
+    expect(staticCall.statusCode).toBe(401);
+
+    // OIDC token without the approver scope is also rejected.
+    const unscoped = await app.inject({
+      method: "POST",
+      url: `/v1/approvals/${id}/approve`,
+      headers: { authorization: `Bearer ${await tokenFor("deploy-agent")}` },
+    });
+    expect(unscoped.statusCode).toBe(401);
+
+    // Token carrying sentinel:approvers is accepted.
+    const scoped = await app.inject({
+      method: "POST",
+      url: `/v1/approvals/${id}/approve`,
+      headers: {
+        authorization: `Bearer ${await tokenFor("deploy-agent", { scope: "sentinel:evaluate sentinel:approvers" })}`,
+      },
+    });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json().approvalStatus).toBe("approved");
   });
 
   it("replays a stored action and dry-runs a candidate policy", async () => {

@@ -204,7 +204,23 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
     [...store.decisions.values()].filter((d) => d.outcome === "review"),
   );
   const setApproval = (status: "approved" | "rejected") => async (req: unknown, reply: unknown) => {
-    await requireAdmin(req as never);
+    // Approvals accept admin basic auth OR an OIDC token carrying the
+    // sentinel:approvers scope. Static agent keys are never enough here.
+    const headers = (req as { headers: Record<string, string | string[] | undefined> }).headers;
+    let authorized = false;
+    try {
+      await requireAdmin(req as never);
+      authorized = true;
+    } catch {
+      const identity = await authenticateAgent(headers, agentAuth).catch(() => null);
+      authorized =
+        identity?.kind === "oidc" && identity.scopes.includes("sentinel:approvers");
+    }
+    if (!authorized) {
+      return (reply as { code: (n: number) => { send: (b: unknown) => unknown } })
+        .code(401)
+        .send({ error: "unauthorized: approvals require admin or approver token" });
+    }
     const { id } = (req as { params: { id: string } }).params;
     const d = store.decisions.get(id);
     if (!d) {

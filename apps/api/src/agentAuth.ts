@@ -6,7 +6,7 @@ import { jwtVerify, decodeJwt, createRemoteJWKSet, type JWTVerifyGetKey } from "
 // holder could previously impersonate any agent. Static keys remain as a
 // deprecated dev fallback (warned once when OIDC is configured).
 export type AgentIdentity =
-  | { kind: "oidc"; agentId: string }
+  | { kind: "oidc"; agentId: string; scopes: string[] }
   | { kind: "static" };
 
 export type AgentAuthOptions = {
@@ -98,8 +98,15 @@ export async function authenticateAgent(
         return set;
       })();
     const { payload } = await jwtVerify(token!, getKey, { issuer: iss, audience: opts.audience });
-    if (typeof payload.sub !== "string" || payload.sub.length === 0) fail();
-    return { kind: "oidc", agentId: payload.sub! };
+    const sub = typeof payload.sub === "string" && payload.sub.length > 0 ? payload.sub : fail();
+    // OAuth scopes: space-separated `scope` (RFC 6749) or `scp` array (Entra style).
+    const scopes =
+      typeof payload.scope === "string"
+        ? payload.scope.split(" ").map((s) => s.trim()).filter(Boolean)
+        : Array.isArray(payload.scp)
+          ? (payload.scp as unknown[]).filter((s): s is string => typeof s === "string")
+          : [];
+    return { kind: "oidc", agentId: sub, scopes };
   } catch (err) {
     if ((err as { statusCode?: number }).statusCode === 401) throw err;
     fail();
