@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
+import { isOidcConfigured } from "./auth";
 
-// Minimal basic-auth gate for approvals (and optionally whole dashboard).
-// Edge-safe: no node: imports (ponytail: plain compare; timing-safe
-// compare lives server-side in the API route where node:crypto exists).
-function authorized(req: NextRequest): boolean {
+// Route protection: when OIDC is configured, mutating routes require a
+// signed-in session; otherwise the legacy basic-auth gate applies
+// (dev mode). Edge-safe: no node: imports. API-level approval auth
+// (scrypt) is unchanged and enforced by the API itself.
+function basicAuthorized(req: NextRequest): boolean {
   const user = process.env.ADMIN_USER ?? "admin";
   const pass = process.env.ADMIN_PASS ?? "admin";
   const header = req.headers.get("authorization") ?? "";
@@ -11,16 +14,32 @@ function authorized(req: NextRequest): boolean {
   return header === expected;
 }
 
-export function middleware(req: NextRequest) {
-  if (req.nextUrl.pathname.startsWith("/approvals") && req.method !== "GET") {
-    if (!authorized(req)) {
-      return new NextResponse("auth required", {
+export async function middleware(req: NextRequest) {
+  if (req.method === "GET") return NextResponse.next();
+  const isApi = req.nextUrl.pathname.startsWith("/api/");
+  if (isOidcConfigured()) {
+    const token = await getToken({ req });
+    if (!token) {
+      return new NextResponse("sign-in required", {
         status: 401,
-        headers: { "www-authenticate": 'Basic realm="sentinel"' },
+        headers: { "www-authenticate": 'Bearer realm="sentinel"' },
       });
     }
+    return NextResponse.next();
+  }
+  // Dev mode (no OIDC): browser-driven /api/* proxies stay open — the API
+  // itself still enforces admin auth using server-side credentials.
+  // Legacy basic gate keeps applying to non-GET /approvals navigations.
+  if (isApi) return NextResponse.next();
+  if (!basicAuthorized(req)) {
+    return new NextResponse("auth required", {
+      status: 401,
+      headers: { "www-authenticate": 'Basic realm="sentinel"' },
+    });
   }
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/approvals/:path*"] };
+export const config = {
+  matcher: ["/approvals/:path*", "/api/approvals/:path*", "/api/policies/:path*"],
+};
