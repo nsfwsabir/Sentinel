@@ -80,6 +80,7 @@ export class MockJudgmentProvider implements JudgmentProvider {
  * keep a single import. Kept server-side only.
  */
 export { LayaJudgmentProvider, type LayaProviderOptions } from "./laya.js";
+export { resolveLayaConfig, HOSTED_API_URL, type LayaMode, type ResolvedLayaConfig } from "./config.js";
 import { LayaJudgmentProvider } from "./laya.js";
 
 export function providerFromEnv(): JudgmentProvider {

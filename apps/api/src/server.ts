@@ -303,6 +303,46 @@ export function buildServer(store: Store = createMemoryStore()): FastifyInstance
     };
   });
 
+  // Provider status (public metadata, never secrets) + connection test (admin).
+  app.get("/v1/provider/status", async () => {
+    if (process.env.JUDGMENT_PROVIDER !== "laya") return { provider: "mock" };
+    try {
+      const { resolveLayaConfig } = await import("@sentinel/judgment-provider");
+      const cfg = resolveLayaConfig();
+      return { provider: "laya", mode: cfg.mode, warnings: cfg.warnings };
+    } catch (err) {
+      return { provider: "laya", mode: "invalid", warnings: [], error: err instanceof Error ? err.message : "invalid config" };
+    }
+  });
+  app.post("/v1/provider/test", async (req, reply) => {
+    await requireAdmin(req as never);
+    const started = Date.now();
+    const base = { provider: provider.name } as { provider: string; latencyMs: number } & Record<string, unknown>;
+    try {
+      const judgments = await provider.judge({
+        agent: "sentinel-test",
+        task: "connection test",
+        tool: "query_database",
+        arguments: { q: "select 1" },
+        policies: [],
+        environment: "development",
+      });
+      return {
+        ...base,
+        latencyMs: Date.now() - started,
+        ok: true,
+        judgments: judgments.map((j) => ({ question: j.question, answer: j.answer, confidence: j.confidence })),
+      };
+    } catch (err) {
+      return reply.code(502).send({
+        ...base,
+        latencyMs: Date.now() - started,
+        ok: false,
+        error: err instanceof Error ? err.message : "connection failed",
+      });
+    }
+  });
+
   return app;
 }
 
@@ -415,7 +455,8 @@ async function runEvaluation(
   };
 }
 
-/** Fire-and-forget PG mirror of the in-memory decision. Skips when DATABASE_URL unset. */async function persistAudit(input: {
+/** Fire-and-forget PG mirror of the in-memory decision. Skips when DATABASE_URL unset. */
+async function persistAudit(input: {
   agent: { id: string; name: string; description?: string; status: string };
   tool: { id: string; name: string; description: string; riskLevel: string };
   policies: { id: string; name: string; description: string; severity: string; mode: string; enabled: boolean; version: number }[];

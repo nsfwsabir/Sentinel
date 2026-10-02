@@ -134,6 +134,61 @@ describe("api", () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it("reports provider status and tests the connection (admin-gated)", async () => {
+    const app = buildServer(createMemoryStore());
+    const status = await app.inject({ method: "GET", url: "/v1/provider/status" });
+    expect(status.json().provider).toBe("mock");
+
+    const anon = await app.inject({ method: "POST", url: "/v1/provider/test" });
+    expect(anon.statusCode).toBe(401);
+
+    const admin = "Basic " + Buffer.from("admin:admin").toString("base64");
+    const test = await app.inject({
+      method: "POST",
+      url: "/v1/provider/test",
+      headers: { authorization: admin },
+    });
+    expect(test.statusCode).toBe(200);
+    expect(test.json().ok).toBe(true);
+    expect(test.json().judgments.length).toBeGreaterThan(0);
+  });
+
+  it("never leaks the provider key in fail-closed responses", async () => {
+    const savedProvider = process.env.JUDGMENT_PROVIDER;
+    const savedUrl = process.env.LAYA_API_URL;
+    const savedKey = process.env.LAYA_API_KEY;
+    process.env.JUDGMENT_PROVIDER = "laya";
+    process.env.LAYA_API_URL = "http://127.0.0.1:9/unreachable";
+    process.env.LAYA_API_KEY = "lsk_live_super-secret-key";
+    try {
+      const app = buildServer(createMemoryStore());
+      const r = await app.inject({
+        method: "POST",
+        url: "/v1/actions/evaluate",
+        headers: { "x-api-key": "dev-key-1" },
+        payload: { agentId: "research-agent", toolId: "query_database", arguments: { q: "select 1" }, context: {} },
+      });
+      expect(r.json().decision).toBe("review");
+      expect(JSON.stringify(r.json())).not.toContain("super-secret-key");
+
+      const admin = "Basic " + Buffer.from("admin:admin").toString("base64");
+      const t = await app.inject({
+        method: "POST",
+        url: "/v1/provider/test",
+        headers: { authorization: admin },
+      });
+      expect(t.statusCode).toBe(502);
+      expect(JSON.stringify(t.json())).not.toContain("super-secret-key");
+    } finally {
+      if (savedProvider === undefined) delete process.env.JUDGMENT_PROVIDER;
+      else process.env.JUDGMENT_PROVIDER = savedProvider;
+      if (savedUrl === undefined) delete process.env.LAYA_API_URL;
+      else process.env.LAYA_API_URL = savedUrl;
+      if (savedKey === undefined) delete process.env.LAYA_API_KEY;
+      else process.env.LAYA_API_KEY = savedKey;
+    }
+  });
+
   it("replays a stored action and dry-runs a candidate policy", async () => {
     const app = buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };
