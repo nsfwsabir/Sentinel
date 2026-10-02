@@ -272,6 +272,44 @@ describe("api", () => {
     expect(scoped.json().approvalStatus).toBe("approved");
   });
 
+  it("ingests falco signals as evidence and lists them", async () => {
+    const app = buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const bad = await app.inject({
+      method: "POST",
+      url: "/v1/signals/falco",
+      headers: KEY,
+      payload: { nope: true },
+    });
+    expect(bad.statusCode).toBe(400);
+
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/v1/signals/other",
+      headers: KEY,
+      payload: { rule: "x", priority: "Warning" },
+    });
+    expect(unknown.statusCode).toBe(404);
+
+    const ok = await app.inject({
+      method: "POST",
+      url: "/v1/signals/falco",
+      headers: KEY,
+      payload: {
+        rule: "Shell in sentinel-api container",
+        priority: "Warning",
+        output: "shell spawned in sentinel-api",
+        output_fields: { "container.name": "sentinel-api" },
+      },
+    });
+    expect(ok.statusCode).toBe(201);
+    expect(ok.json().source).toBe("falco");
+
+    const list = await app.inject({ method: "GET", url: "/v1/signals?source=falco" });
+    expect(list.json().length).toBe(1);
+    expect(list.json()[0].rule).toBe("Shell in sentinel-api container");
+  });
+
   it("replays a stored action and dry-runs a candidate policy", async () => {
     const app = buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };

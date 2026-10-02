@@ -296,6 +296,55 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
     return reply.code(204).send();
   });
 
+  // External detection signals (Falco alerts, etc.) are evidence only:
+  // stored, listed, and shown in the dashboard. They never auto-decide.
+  type Signal = {
+    id: string;
+    source: string;
+    rule: string;
+    priority: string;
+    summary: string;
+    fields: Record<string, unknown>;
+    createdAt: Date;
+  };
+  const signals: Signal[] = [];
+  const SIGNAL_CAP = 500;
+
+  app.post("/v1/signals/:source", async (req, reply) => {
+    await authenticateAgent(req.headers, agentAuth);
+    const { source } = req.params as { source: string };
+    if (source !== "falco") return reply.code(404).send({ error: "unknown signal source" });
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    // Accept Falco JSON output shape: { rule, priority, output_fields, ... }.
+    const rule = body.rule;
+    const priority = body.priority;
+    if (typeof rule !== "string" || typeof priority !== "string") {
+      return reply.code(400).send({ error: "falco signal requires rule and priority strings" });
+    }
+    const fields =
+      body.output_fields && typeof body.output_fields === "object"
+        ? (body.output_fields as Record<string, unknown>)
+        : {};
+    const signal: Signal = {
+      id: `sig_${randomUUID().slice(0, 8)}`,
+      source,
+      rule,
+      priority,
+      summary: typeof body.output === "string" ? body.output : `${rule} [${priority}]`,
+      fields,
+      createdAt: new Date(),
+    };
+    signals.unshift(signal);
+    if (signals.length > SIGNAL_CAP) signals.length = SIGNAL_CAP;
+    childLogger({ decision: `signal:${source}:${rule}` }).info("signal");
+    return reply.code(201).send(signal);
+  });
+  app.get("/v1/signals", async (req) => {
+    const q = req.query as { source?: string; limit?: string };
+    const limit = Math.min(Number(q.limit ?? 100) || 100, SIGNAL_CAP);
+    return signals.filter((s) => !q.source || s.source === q.source).slice(0, limit);
+  });
+
   // TRD §12 metrics — derived from decisions so they survive restarts via PG hydrate.
   app.get("/v1/metrics", async () => {
     const all = [...store.decisions.values()];

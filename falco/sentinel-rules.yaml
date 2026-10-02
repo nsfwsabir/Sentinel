@@ -1,0 +1,34 @@
+# Falco rules for the Sentinel deployment. Container/host threats only —
+# API-abuse patterns (auth storms, evaluate bursts) are handled inside
+# Sentinel itself (rate limiting, metrics). Alerts ship to Sentinel via the
+# Falco http_output webhook POSTed to /v1/signals/falco and are stored as
+# evidence; they never auto-decide.
+- rule: Shell in Sentinel container
+  desc: Detect shell spawned inside a Sentinel service container
+  condition: >
+    spawned_process and container
+    and container.name startswith "sentinel"
+    and proc.name in (bash, sh, ash, dash, python3, perl, ruby)
+  output: "shell spawned in %container.name (%proc.name %proc.cmdline)"
+  priority: WARNING
+  tags: [sentinel, container, shell]
+
+- rule: Sensitive file read in Sentinel container
+  desc: Detect reads of credentials or host identity files from Sentinel containers
+  condition: >
+    open_read and container
+    and container.name startswith "sentinel"
+    and fd.name in (/etc/shadow, /etc/passwd, /root/.ssh/id_rsa, /var/run/secrets/kubernetes.io/serviceaccount/token)
+  output: "sensitive file read %fd.name in %container.name"
+  priority: WARNING
+  tags: [sentinel, container, credentials]
+
+- rule: Unexpected outbound connection from Sentinel API
+  desc: The API should only talk to Postgres, Redis, and the judgment provider
+  condition: >
+    outbound and container
+    and container.name = "sentinel-api"
+    and not fd.sip in (postgres_servers, redis_servers, laya_endpoints)
+  output: "unexpected outbound %fd.sip:%fd.sport from sentinel-api"
+  priority: NOTICE
+  tags: [sentinel, network, egress]

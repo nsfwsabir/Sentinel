@@ -1,0 +1,62 @@
+# Local full-stack dev: Postgres + Redis + API + dashboard + Falco sidecar.
+# Managed services (Neon/Upstash) remain the production recommendation.
+# Falco needs a Linux host with kernel headers (privileged); if it cannot
+# start in your environment, the rest of the stack is unaffected — Sentinel
+# treats Falco alerts as optional evidence via /v1/signals/falco.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+      POSTGRES_DB: sentinel
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql://sentinel:sentinel@postgres:5432/sentinel
+      REDIS_URL: redis://redis:6379
+      AGENT_API_KEYS: dev-key-1
+      ADMIN_USER: admin
+      ADMIN_PASS: admin
+    ports:
+      - "3001:3001"
+    depends_on:
+      - postgres
+      - redis
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    environment:
+      SENTINEL_API_URL: http://api:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  falco:
+    image: falcosecurity/falco:latest
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./falco/sentinel-rules.yaml:/etc/falco/rules.d/sentinel-rules.yaml:ro
+    environment:
+      FALCO_HTTP_OUTPUT_URL: http://api:3001/v1/signals/falco
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
