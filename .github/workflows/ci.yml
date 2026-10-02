@@ -14,6 +14,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: OPA policies
+        run: |
+          curl -sSL -o /tmp/opa https://openpolicyagent.org/downloads/v1.21.1/opa_linux_amd64_static
+          chmod +x /tmp/opa
+          /tmp/opa test packages/policy-opa/policies/
+          /tmp/opa build -t wasm -e sentinel/findings -o /tmp/b.tar.gz packages/policy-opa/policies/sentinel.rego
       # Build first: cross-package imports resolve via dist/, which only
       # exists after a topological build. Typecheck/test on a clean
       # checkout fail without it (TS2307).

@@ -1,5 +1,6 @@
 import { createMemoryStore, seedDefaults, type Store } from "./store.js";
 import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
+import { evaluatePolicies } from "@sentinel/policy-opa";
 import { decide } from "@sentinel/decision-engine";
 import { providerFromEnv } from "@sentinel/judgment-provider";
 import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
@@ -355,7 +356,8 @@ async function runEvaluation(
   },
 ) {
   const policies = [...store.policies.values()];
-  const { findings, matchedPolicyIds } = evaluateDeterministic(
+  // OPA WASM first, TypeScript engine on any failure. Same output shape.
+  const { findings, matchedPolicyIds } = await evaluatePolicies(
     {
       agentId: input.agentId,
       toolId: input.toolId,

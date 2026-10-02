@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@sentinel/db": "workspace:*",
+    "@sentinel/policy-opa": "workspace:*",
     "@sentinel/decision-engine": "workspace:*",
     "@sentinel/judgment-provider": "workspace:*",
     "@sentinel/logger": "workspace:*",

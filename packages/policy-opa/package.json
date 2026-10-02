@@ -1,0 +1,25 @@
+{
+  "name": "@sentinel/policy-opa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo 'no lint configured'",
+    "test": "vitest run",
+    "bundle": "opa build -t wasm -e sentinel/findings -o /tmp/sentinel-bundle.tar.gz policies/sentinel.rego && tar -xzf /tmp/sentinel-bundle.tar.gz -O /policy.wasm > policies/policy.wasm",
+    "policy-test": "opa test policies/"
+  },
+  "dependencies": {
+    "@open-policy-agent/opa-wasm": "^1.10.0",
+    "@sentinel/policy-engine": "workspace:*",
+    "@sentinel/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}
