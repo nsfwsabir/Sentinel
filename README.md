@@ -10,7 +10,8 @@ TRD stack: Fastify API + Next.js dashboard + Postgres/Drizzle + Redis. Contextua
 ```bash
 cp .env.example .env  # fill DATABASE_URL, REDIS_URL
 pnpm install
-pnpm typecheck && pnpm test
+pnpm -r build         # required first: packages resolve each other via dist/
+pnpm -r typecheck && pnpm -r test
 pnpm --filter @sentinel/api dev
 ```
 
