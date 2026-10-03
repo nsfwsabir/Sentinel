@@ -77,6 +77,8 @@ describe("agent-sdk", () => {
       mode: "block",
       enabled: true,
       version: 1,
+      scope: "org",
+      agentIds: [],
     });
     expect(dry.would_block).toBe(1);
     expect((await client.purgeDecisions("2020-01-01")).deleted).toBe(2);

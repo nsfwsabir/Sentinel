@@ -33,6 +33,8 @@ describe("policy-opa mapping", () => {
         mode: "block" as const,
         enabled: true,
         version: 1,
+        scope: "org" as const,
+        agentIds: [] as string[],
       },
     ];
     const r = await evaluatePolicies(action, policies);

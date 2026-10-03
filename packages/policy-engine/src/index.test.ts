@@ -10,6 +10,8 @@ const base: Policy = {
   mode: "block",
   enabled: true,
   version: 1,
+  scope: "org",
+  agentIds: [],
 };
 
 describe("policy-engine deterministic", () => {
