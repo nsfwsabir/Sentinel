@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildServer } from "../../apps/api/src/server.js";
 import { createMemoryStore } from "../../apps/api/src/store.js";
 
-function app() {
+async function app() {
   return buildServer(createMemoryStore());
 }
 
@@ -12,7 +12,7 @@ const KEY = { "x-api-key": "dev-key-1" };
 // never override policy — injection phrases must not flip BLOCK→ALLOW.
 describe("adversarial", () => {
   it("still blocks exfil hidden behind prompt injection", async () => {
-    const a = app();
+    const a = await app();
     const r = await a.inject({
       method: "POST",
       url: "/v1/actions/evaluate",
@@ -29,7 +29,7 @@ describe("adversarial", () => {
   });
 
   it("blocks credential exfiltration via pasted secret", async () => {
-    const a = app();
+    const a = await app();
     const r = await a.inject({
       method: "POST",
       url: "/v1/actions/evaluate",
@@ -46,7 +46,7 @@ describe("adversarial", () => {
   });
 
   it("routes production deletion to review, never silent allow", async () => {
-    const a = app();
+    const a = await app();
     const r = await a.inject({
       method: "POST",
       url: "/v1/actions/evaluate",
@@ -62,7 +62,7 @@ describe("adversarial", () => {
   });
 
   it("routes unauthorized $500 payment to review", async () => {
-    const a = app();
+    const a = await app();
     const r = await a.inject({
       method: "POST",
       url: "/v1/actions/evaluate",
@@ -78,7 +78,7 @@ describe("adversarial", () => {
   });
 
   it("allows benign dev query", async () => {
-    const a = app();
+    const a = await app();
     const r = await a.inject({
       method: "POST",
       url: "/v1/actions/evaluate",

@@ -24,7 +24,7 @@ async function oidcOpts(): Promise<{ opts: AgentAuthOptions; tokenFor: (sub: str
 
 describe("api", () => {
   it("blocks hero exfil end-to-end", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const res = await app.inject({
       method: "POST",
       url: "/v1/actions/evaluate",
@@ -43,7 +43,7 @@ describe("api", () => {
 
   it("401s without agent key and redacts secrets", async () => {
     const store = createMemoryStore();
-    const app = buildServer(store);
+    const app = await buildServer(store);
     const denied = await app.inject({
       method: "POST",
       url: "/v1/actions/evaluate",
@@ -69,7 +69,7 @@ describe("api", () => {
   });
 
   it("gates approvals behind admin auth", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const created = await app.inject({
       method: "POST",
       url: "/v1/actions/evaluate",
@@ -90,7 +90,7 @@ describe("api", () => {
   });
 
   it("registers agents/tools and filters decisions + metrics", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const agent = await app.inject({
       method: "POST",
       url: "/v1/agents",
@@ -121,7 +121,7 @@ describe("api", () => {
   });
 
   it("bumps policy version on patch, ignoring client version", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const r = await app.inject({
       method: "PATCH",
       url: "/v1/policies/pol_pay",
@@ -134,7 +134,7 @@ describe("api", () => {
   });
 
   it("round-trips agent detail and tool CRUD", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };
     const detail = await app.inject({ method: "GET", url: "/v1/agents/research-agent" });
     expect(detail.statusCode).toBe(200);
@@ -155,7 +155,7 @@ describe("api", () => {
   });
 
   it("reports provider status and tests the connection (admin-gated)", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const status = await app.inject({ method: "GET", url: "/v1/provider/status" });
     expect(status.json().provider).toBe("mock");
 
@@ -181,7 +181,7 @@ describe("api", () => {
     process.env.LAYA_API_URL = "http://127.0.0.1:9/unreachable";
     process.env.LAYA_API_KEY = "lsk_live_super-secret-key";
     try {
-      const app = buildServer(createMemoryStore());
+      const app = await buildServer(createMemoryStore());
       const r = await app.inject({
         method: "POST",
         url: "/v1/actions/evaluate",
@@ -211,7 +211,7 @@ describe("api", () => {
 
   it("binds token identity to agentId: mismatch 403s, match evaluates", async () => {
     const { opts, tokenFor } = await oidcOpts();
-    const app = buildServer(createMemoryStore(), { agentAuth: opts });
+    const app = await buildServer(createMemoryStore(), { agentAuth: opts });
     const payload = (agentId: string) => ({
       agentId,
       toolId: "query_database",
@@ -238,7 +238,7 @@ describe("api", () => {
 
   it("approves with approver-scoped token, rejects scope-less and static callers", async () => {
     const { opts, tokenFor } = await oidcOpts();
-    const app = buildServer(createMemoryStore(), { agentAuth: { ...opts, staticKeys: ["dev-key-1"] } });
+    const app = await buildServer(createMemoryStore(), { agentAuth: { ...opts, staticKeys: ["dev-key-1"] } });
     const KEY = { "x-api-key": "dev-key-1" };
     const created = await app.inject({
       method: "POST",
@@ -273,7 +273,7 @@ describe("api", () => {
   });
 
   it("ingests falco signals as evidence and lists them", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };
     const bad = await app.inject({
       method: "POST",
@@ -311,7 +311,7 @@ describe("api", () => {
   });
 
   it("purges old decisions but keeps approvals unless asked", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };
     const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
 
@@ -350,7 +350,7 @@ describe("api", () => {
   });
 
   it("replays a stored action and dry-runs a candidate policy", async () => {
-    const app = buildServer(createMemoryStore());
+    const app = await buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };
     const first = await app.inject({
       method: "POST",

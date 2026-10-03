@@ -1,4 +1,5 @@
-import { createMemoryStore, seedDefaults, type Store } from "./store.js";
+import { createMemoryStore, seedStore } from "./store.js";
+import type { Store } from "@sentinel/schemas";
 import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
 import { evaluatePolicies } from "@sentinel/policy-opa";
 import { decide } from "@sentinel/decision-engine";
@@ -21,8 +22,8 @@ async function requireAdmin(req: { headers: Record<string, string | string[] | u
   }
 }
 
-export function buildServer(store: Store = createMemoryStore(), opts?: { agentAuth?: AgentAuthOptions }): FastifyInstance {
-  seedDefaults(store);
+export async function buildServer(store: Store = createMemoryStore(), opts?: { agentAuth?: AgentAuthOptions }): Promise<FastifyInstance> {
+  await seedStore(store);
   const app = Fastify({ logger: false });
   const provider = providerFromEnv();
   const agentAuth = opts?.agentAuth;
@@ -58,11 +59,11 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
       // limiter unavailable — continue
     }
 
-    const agent = store.agents.get(parsed.agentId);
+    const agent = await store.getAgent(parsed.agentId);
     if (!agent || agent.status !== "active") {
       return reply.code(403).send({ error: "unknown or disabled agent" });
     }
-    const tool = store.tools.get(parsed.toolId);
+    const tool = await store.getTool(parsed.toolId);
     if (!tool) return reply.code(404).send({ error: "unknown tool" });
 
     return runEvaluation(store, provider, {
@@ -83,13 +84,13 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
   app.post("/v1/actions/:id/replay", async (req, reply) => {
     await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
-    const stored = store.actions.get(id);
+    const stored = await store.getAction(id);
     if (!stored) return reply.code(404).send({ error: "unknown action" });
-    const agent = store.agents.get(stored.agentId);
+    const agent = await store.getAgent(stored.agentId);
     if (!agent || agent.status !== "active") {
       return reply.code(403).send({ error: "unknown or disabled agent" });
     }
-    const tool = store.tools.get(stored.toolId);
+    const tool = await store.getTool(stored.toolId);
     if (!tool) return reply.code(404).send({ error: "unknown tool" });
     return runEvaluation(store, provider, {
       agent,
@@ -112,12 +113,12 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
     const candidate = PolicySchema.parse(req.body);
     const q = (req.query ?? {}) as { limit?: string };
     const limit = Math.min(Number(q.limit ?? 200) || 200, 1000);
-    const actions = [...store.actions.values()].slice(-limit);
+    const actions = await store.listRecentActions(limit);
     let wouldBlock = 0;
     let wouldReview = 0;
     const matchedActionIds: string[] = [];
     for (const a of actions) {
-      const tool = store.tools.get(a.toolId);
+      const tool = await store.getTool(a.toolId);
       const { findings } = evaluateDeterministic(
         { agentId: a.agentId, toolId: a.toolId, toolName: tool?.name, arguments: a.arguments, context: {} },
         [candidate],
@@ -142,67 +143,55 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
   });
 
   // Policies CRUD (TRD §9)
-  app.get("/v1/policies", async () => [...store.policies.values()]);
+  app.get("/v1/policies", async () => store.listPolicies());
   app.post("/v1/policies", async (req, reply) => {
     await authenticateAgent(req.headers, agentAuth);
     const p = PolicySchema.parse(req.body);
-    store.policies.set(p.id, p);
+    await store.savePolicy(p);
     return reply.code(201).send(p);
   });
   app.get("/v1/policies/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const p = store.policies.get(id);
+    const p = await store.getPolicy(id);
     if (!p) return reply.code(404).send({ error: "not found" });
     return p;
   });
   app.patch("/v1/policies/:id", async (req) => {
     await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
-    const cur = store.policies.get(id);
+    const cur = await store.getPolicy(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
     // Every mutation bumps version; client-supplied id/version ignored.
     const next = { ...cur, ...((req.body ?? {}) as object), id: cur.id, version: cur.version + 1 };
     const p = PolicySchema.parse(next);
-    store.policies.set(id, p);
+    await store.savePolicy(p);
     return p;
   });
   app.delete("/v1/policies/:id", async (req, reply) => {
     await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
-    if (!store.policies.delete(id)) return reply.code(404).send({ error: "not found" });
+    if (!(await store.deletePolicy(id))) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
   });
 
   // Decisions + approvals
   app.get("/v1/decisions", async (req) => {
     const q = req.query as { outcome?: string; agentId?: string; toolId?: string; limit?: string };
-    let list = [...store.decisions.values()];
-    if (q.outcome) list = list.filter((d) => d.outcome === q.outcome);
-    if (q.agentId) {
-      const actionIds = new Set(
-        [...store.actions.values()].filter((a) => a.agentId === q.agentId).map((a) => a.id),
-      );
-      list = list.filter((d) => actionIds.has(d.actionId));
-    }
-    if (q.toolId) {
-      const actionIds = new Set(
-        [...store.actions.values()].filter((a) => a.toolId === q.toolId).map((a) => a.id),
-      );
-      list = list.filter((d) => actionIds.has(d.actionId));
-    }
-    const limit = Math.min(Number(q.limit ?? 100) || 100, 500);
-    return list.slice(-limit).reverse();
+    return store.listDecisions({
+      outcome: q.outcome,
+      agentId: q.agentId,
+      toolId: q.toolId,
+      limit: Math.min(Number(q.limit ?? 100) || 100, 500),
+    });
   });
   app.get("/v1/decisions/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const d = store.decisions.get(id);
+    const d = await store.getDecision(id);
     if (!d) return reply.code(404).send({ error: "not found" });
-    const action = store.actions.get(d.actionId);
+    const action = await store.getAction(d.actionId);
     return { ...d, action };
   });
-  app.get("/v1/approvals", async () =>
-    [...store.decisions.values()].filter((d) => d.outcome === "review"),
-  );
+  app.get("/v1/approvals", async () => store.listReviewDecisions());
   const setApproval = (status: "approved" | "rejected") => async (req: unknown, reply: unknown) => {
     // Approvals accept admin basic auth OR an OIDC token carrying the
     // sentinel:approvers scope. Static agent keys are never enough here.
@@ -222,7 +211,7 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
         .send({ error: "unauthorized: approvals require admin or approver token" });
     }
     const { id } = (req as { params: { id: string } }).params;
-    const d = store.decisions.get(id);
+    const d = await store.getDecision(id);
     if (!d) {
       return (reply as { code: (n: number) => { send: (b: unknown) => unknown } })
         .code(404)
@@ -230,7 +219,7 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
     }
     // REVIEW is first-class: every approval audited, never auto-converted (§20)
     const next = { ...d, approvalStatus: status as "approved" | "rejected" };
-    store.decisions.set(id, next);
+    await store.saveDecision(next);
     childLogger({ decision_id: id, decision: status }).info("approval");
     return next;
   };
@@ -238,61 +227,61 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
   app.post("/v1/approvals/:id/reject", setApproval("rejected"));
 
   // Agents + tools — PRD §9 success criteria steps 1 & 3.
-  app.get("/v1/agents", async () => [...store.agents.values()]);
+  app.get("/v1/agents", async () => store.listAgents());
   app.post("/v1/agents", async (req, reply) => {
     await authenticateAgent(req.headers, agentAuth);
     const a = AgentSchema.parse({ ...(req.body as object), createdAt: new Date().toISOString() });
-    store.agents.set(a.id, a);
+    await store.saveAgent(a);
     return reply.code(201).send(a);
   });
   app.patch("/v1/agents/:id", async (req) => {
     await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
-    const cur = store.agents.get(id);
+    const cur = await store.getAgent(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
     const next = AgentSchema.parse({ ...cur, ...((req.body ?? {}) as object) });
-    store.agents.set(id, next);
+    await store.saveAgent(next);
     return next;
   });
   app.get("/v1/agents/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const a = store.agents.get(id);
+    const a = await store.getAgent(id);
     if (!a) return reply.code(404).send({ error: "not found" });
-    const recent = [...store.actions.values()].filter((x) => x.agentId === id).slice(-10).reverse();
-    return { ...a, recentActions: recent };
+    const recentActions = await store.listActionsByAgent(id, 10);
+    return { ...a, recentActions };
   });
   app.delete("/v1/agents/:id", async (req, reply) => {
     await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
-    if (!store.agents.delete(id)) return reply.code(404).send({ error: "not found" });
+    if (!(await store.deleteAgent(id))) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
   });
-  app.get("/v1/tools", async () => [...store.tools.values()]);
+  app.get("/v1/tools", async () => store.listTools());
   app.post("/v1/tools", async (req, reply) => {
     await authenticateAgent(req.headers, agentAuth);
     const t = ToolSchema.parse(req.body);
-    store.tools.set(t.id, t);
+    await store.saveTool(t);
     return reply.code(201).send(t);
   });
   app.get("/v1/tools/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const t = store.tools.get(id);
+    const t = await store.getTool(id);
     if (!t) return reply.code(404).send({ error: "not found" });
     return t;
   });
   app.patch("/v1/tools/:id", async (req) => {
     await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
-    const cur = store.tools.get(id);
+    const cur = await store.getTool(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
     const next = ToolSchema.parse({ ...cur, ...((req.body ?? {}) as object), id: cur.id });
-    store.tools.set(id, next);
+    await store.saveTool(next);
     return next;
   });
   app.delete("/v1/tools/:id", async (req, reply) => {
     await authenticateAgent(req.headers, agentAuth);
     const { id } = req.params as { id: string };
-    if (!store.tools.delete(id)) return reply.code(404).send({ error: "not found" });
+    if (!(await store.deleteTool(id))) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
   });
 
@@ -358,52 +347,13 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
     const includeApprovals = q.includeApprovals === "true";
     const limit = Math.min(Number(q.limit ?? 1000) || 1000, 5000);
 
-    let deleted = 0;
-    let skippedApprovals = 0;
-    const removedDecisionIds: string[] = [];
-    const removedActionIds: string[] = [];
-    for (const d of [...store.decisions.values()]) {
-      if (deleted >= limit) break;
-      if (d.createdAt >= cutoff) continue;
-      if (!includeApprovals && (d.approvalStatus === "approved" || d.approvalStatus === "rejected")) {
-        skippedApprovals += 1;
-        continue;
-      }
-      store.decisions.delete(d.id);
-      removedDecisionIds.push(d.id);
-      removedActionIds.push(d.actionId);
-      deleted += 1;
-    }
-    // Remove actions orphaned by the purge (replay links several decisions
-    // to one action, so only delete when unreferenced).
-    let actionsDeleted = 0;
-    const purgedActionIds: string[] = [];
-    const referenced = new Set([...store.decisions.values()].map((d) => d.actionId));
-    for (const actionId of new Set(removedActionIds)) {
-      if (!referenced.has(actionId) && store.actions.delete(actionId)) {
-        actionsDeleted += 1;
-        purgedActionIds.push(actionId);
-      }
-    }
-    childLogger({ decision: `purge:${deleted}` }).info("retention");
-    persistPurge(removedDecisionIds, purgedActionIds).catch(() => {});
-    return { deleted, skippedApprovals, actionsDeleted };
+    const result = await store.purgeDecisions(cutoff, { includeApprovals, limit });
+    childLogger({ decision: `purge:${result.deleted}` }).info("retention");
+    return result;
   });
 
-  // TRD §12 metrics — derived from decisions so they survive restarts via PG hydrate.
-  app.get("/v1/metrics", async () => {
-    const all = [...store.decisions.values()];
-    const count = (f: (d: (typeof all)[number]) => boolean) => all.filter(f).length;
-    return {
-      decisions_total: all.length,
-      allow_total: count((d) => d.outcome === "allow"),
-      review_total: count((d) => d.outcome === "review"),
-      block_total: count((d) => d.outcome === "block"),
-      fallback_total: count((d) => d.fallbackUsed === true),
-      approvals_total: count((d) => d.approvalStatus === "approved" || d.approvalStatus === "rejected"),
-      pending_total: count((d) => d.outcome === "review" && (!d.approvalStatus || d.approvalStatus === "pending")),
-    };
-  });
+  // TRD §12 metrics — computed over the full store, no list truncation.
+  app.get("/v1/metrics", async () => store.metrics());
 
   // Provider status (public metadata, never secrets) + connection test (admin).
   app.get("/v1/provider/status", async () => {
@@ -465,7 +415,7 @@ async function runEvaluation(
     reuseActionId?: string;
   },
 ) {
-  const policies = [...store.policies.values()];
+  const policies = await store.listPolicies();
   // OPA WASM first, TypeScript engine on any failure. Same output shape.
   const { findings, matchedPolicyIds } = await evaluatePolicies(
     {
@@ -496,7 +446,7 @@ async function runEvaluation(
   const decisionId = `dec_${randomUUID().slice(0, 8)}`;
   const redacted = redactSecrets(input.args);
   if (!input.reuseActionId) {
-    store.actions.set(actionId, {
+    await store.saveAction({
       id: actionId,
       agentId: input.agentId,
       toolId: input.toolId,
@@ -505,7 +455,7 @@ async function runEvaluation(
       createdAt: new Date(),
     });
   }
-  store.decisions.set(decisionId, {
+  await store.saveDecision({
     id: decisionId,
     actionId,
     outcome: decision.outcome,
@@ -537,107 +487,12 @@ async function runEvaluation(
     fallback_used: decision.fallbackUsed,
   }).info("decision");
 
-  // Best-effort PG audit (managed DATABASE_URL). Never breaks pipeline.
-  persistAudit({
-    agent: input.agent,
-    tool: input.tool,
-    policies,
-    actionId,
-    decisionId,
-    redacted,
-    parsed: { agentId: input.agentId, toolId: input.toolId, task: input.task, arguments: input.args, context: input.context },
-    decision,
-    evaluationMs: Date.now() - input.started,
-  }).catch(() => {});
-
+  // Writes go straight to the configured store (memory or Postgres);
+  // no mirror step: the store IS the source of truth.
   return {
     decision: decision.outcome,
     confidence: decision.confidence,
     reason: decision.reason,
     decisionId,
   };
-}
-
-/** Fire-and-forget PG mirror of the in-memory decision. Skips when DATABASE_URL unset. */
-async function persistAudit(input: {
-  agent: { id: string; name: string; description?: string; status: string };
-  tool: { id: string; name: string; description: string; riskLevel: string };
-  policies: { id: string; name: string; description: string; severity: string; mode: string; enabled: boolean; version: number }[];
-  actionId: string;
-  decisionId: string;
-  redacted: Record<string, unknown>;
-  parsed: { agentId: string; toolId: string; task?: string; arguments: Record<string, unknown>; context: Record<string, unknown> };
-  decision: { outcome: string; confidence?: number; reason?: string; fallbackUsed: boolean; judgments: { question: string; answer: unknown; confidence?: number }[] };
-  evaluationMs: number;
-}): Promise<void> {
-  const { isDbConfigured, db, agents, tools, policies, actions, decisions, judgments } = await import("@sentinel/db");
-  if (!isDbConfigured()) return;
-  const d = db();
-  const now = new Date();
-  await d.insert(agents).values({
-    id: input.agent.id,
-    name: input.agent.name,
-    description: input.agent.description ?? null,
-    status: input.agent.status,
-    createdAt: now,
-  }).onConflictDoNothing();
-  await d.insert(tools).values({
-    id: input.tool.id,
-    name: input.tool.name,
-    description: input.tool.description,
-    riskLevel: input.tool.riskLevel,
-  }).onConflictDoNothing();
-  for (const p of input.policies) {
-    await d.insert(policies).values({
-      id: p.id, name: p.name, description: p.description,
-      severity: p.severity, mode: p.mode, enabled: p.enabled, version: p.version,
-    }).onConflictDoNothing();
-  }
-  await d.insert(actions).values({
-    id: input.actionId,
-    agentId: input.parsed.agentId,
-    toolId: input.parsed.toolId,
-    task: input.parsed.task ?? null,
-    arguments: input.redacted,
-    context: input.parsed.context,
-    createdAt: now,
-  });
-  await d.insert(decisions).values({
-    id: input.decisionId,
-    actionId: input.actionId,
-    outcome: input.decision.outcome,
-    confidence: input.decision.confidence ?? null,
-    reason: input.decision.reason ?? null,
-    policyIds: [],
-    approvalStatus: input.decision.outcome === "review" ? "pending" : null,
-    fallbackUsed: input.decision.fallbackUsed,
-    evaluationDurationMs: input.evaluationMs,
-    createdAt: now,
-  });
-  for (let i = 0; i < input.decision.judgments.length; i++) {
-    const j = input.decision.judgments[i];
-    await d.insert(judgments).values({
-      id: `jud_${input.decisionId}_${i}`,
-      decisionId: input.decisionId,
-      question: j.question,
-      type: "noul",
-      answer: j.answer as object,
-      confidence: j.confidence ?? null,
-    });
-  }
-}
-
-/** Best-effort PG mirror of a retention purge (FK order: judgments first). */
-async function persistPurge(decisionIds: string[], actionIds: string[]): Promise<void> {
-  if (decisionIds.length === 0 && actionIds.length === 0) return;
-  const { isDbConfigured, db, actions, decisions, judgments, inArray } = await import("@sentinel/db");
-  if (!isDbConfigured()) return;
-  const d = db();
-  if (decisionIds.length > 0) {
-    await d.delete(judgments).where(inArray(judgments.decisionId, decisionIds));
-    await d.delete(decisions).where(inArray(decisions.id, decisionIds));
-  }
-  if (actionIds.length > 0) {
-    await d.delete(actions).where(inArray(actions.id, actionIds));
-  }
 }

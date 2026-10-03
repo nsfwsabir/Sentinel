@@ -37,4 +37,55 @@ describe.skipIf(!url)("pg integration", () => {
     await d.delete(s.tools).where(eq(s.tools.id, toolId));
     await d.delete(s.agents).where(eq(s.agents.id, agentId));
   });
+
+  it("pgstore honors the full Store contract", async () => {
+    process.env.DATABASE_URL = url;
+    const { createPgStore } = await import("./pgstore.js");
+    const store = createPgStore();
+    const suffix = Date.now().toString(36);
+    const now = new Date();
+
+    await store.saveAgent({ id: `c_ag_${suffix}`, name: "C", status: "active", createdAt: now });
+    expect((await store.getAgent(`c_ag_${suffix}`))?.name).toBe("C");
+    await store.saveTool({ id: `c_tool_${suffix}`, name: "t", description: "d", riskLevel: "low" });
+    await store.savePolicy({
+      id: `c_pol_${suffix}`, name: "p", description: "d", severity: "low",
+      mode: "audit", enabled: true, version: 1,
+    });
+    expect((await store.listPolicies()).some((p) => p.id === `c_pol_${suffix}`)).toBe(true);
+
+    const actionId = `c_act_${suffix}`;
+    await store.saveAction({ id: actionId, agentId: `c_ag_${suffix}`, toolId: `c_tool_${suffix}`, arguments: {}, createdAt: now });
+    expect((await store.listActionsByAgent(`c_ag_${suffix}`, 10)).length).toBe(1);
+
+    const decId = `c_dec_${suffix}`;
+    await store.saveDecision({
+      id: decId, actionId, outcome: "review", confidence: 0.9, reason: "r",
+      policyIds: [`c_pol_${suffix}`], createdAt: now,
+      judgments: [{ id: `c_jud_${suffix}`, decisionId: decId, question: "q", type: "noul", answer: "yes", confidence: 0.9 }],
+      approvalStatus: "pending",
+    });
+    const fetched = await store.getDecision(decId);
+    expect(fetched?.judgments.length).toBe(1);
+    expect((await store.listDecisions({ outcome: "review", agentId: `c_ag_${suffix}`, limit: 10 })).length).toBe(1);
+    expect((await store.listReviewDecisions()).some((d) => d.id === decId)).toBe(true);
+
+    const m = await store.metrics();
+    expect(m.review_total).toBeGreaterThanOrEqual(1);
+    expect(m.decisions_total).toBeGreaterThanOrEqual(m.review_total);
+
+    // Approval then purge: approved rows survive by default.
+    await store.saveDecision({ ...fetched!, approvalStatus: "approved" });
+    const kept = await store.purgeDecisions(new Date(Date.now() + 1000), { includeApprovals: false, limit: 100 });
+    expect(kept.skippedApprovals).toBeGreaterThanOrEqual(1);
+    const gone = await store.purgeDecisions(new Date(Date.now() + 1000), { includeApprovals: true, limit: 100 });
+    expect(gone.deleted).toBeGreaterThanOrEqual(1);
+    expect(await store.getDecision(decId)).toBeUndefined();
+
+    await store.deleteAction(actionId);
+    await store.deleteTool(`c_tool_${suffix}`);
+    await store.deletePolicy(`c_pol_${suffix}`);
+    await store.deleteAgent(`c_ag_${suffix}`);
+    expect(await store.getAgent(`c_ag_${suffix}`)).toBeUndefined();
+  });
 });

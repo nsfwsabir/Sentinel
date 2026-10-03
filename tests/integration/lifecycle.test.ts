@@ -7,7 +7,7 @@ import { createMemoryStore } from "../../apps/api/src/store.js";
 describe("integration: full decision lifecycle", () => {
   it("hero demo: block exfil, inspect, review payment, approve", async () => {
     const store = createMemoryStore();
-    const app = buildServer(store);
+    const app = await buildServer(store);
     const KEY = { "x-api-key": "dev-key-1" };
 
     const blocked = await app.inject({

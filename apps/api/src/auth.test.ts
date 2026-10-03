@@ -22,7 +22,7 @@ describe("auth", () => {
     const saved = process.env.ADMIN_PASS_HASH;
     process.env.ADMIN_PASS_HASH = await hashAdminPassword("hash-only");
     try {
-      const app = buildServer(createMemoryStore());
+      const app = await buildServer(createMemoryStore());
       const created = await app.inject({
         method: "POST",
         url: "/v1/actions/evaluate",

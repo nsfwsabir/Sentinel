@@ -1,102 +1,176 @@
-import type { Agent, Decision, Judgment, Policy, Tool } from "@sentinel/schemas";
+import type {
+  Agent,
+  Tool,
+  Policy,
+  Store,
+  StoredAction,
+  StoredDecision,
+  DecisionFilter,
+} from "@sentinel/schemas";
 
-// Store interface — in-memory now, Drizzle PG + Redis in Phase 5.
-// Keeps API decoupled so persistence swaps without route changes.
-export type ApprovalStatus = "pending" | "approved" | "rejected";
-
-export type StoredAction = {
-  id: string;
-  agentId: string;
-  toolId: string;
-  task?: string;
-  arguments: Record<string, unknown>;
-  createdAt: Date;
-};
-
-export type StoredDecision = Decision & {
-  judgments: Judgment[];
-  reason: string;
-  confidence: number;
-  approvalStatus?: ApprovalStatus;
-  fallbackUsed?: boolean;
-};
-
-export interface Store {
-  agents: Map<string, Agent>;
-  tools: Map<string, Tool>;
-  policies: Map<string, Policy>;
-  actions: Map<string, StoredAction>;
-  decisions: Map<string, StoredDecision>;
-}
-
+// In-memory Store: hermetic default for tests and zero-dependency dev.
+// Postgres (@sentinel/db PgStore) implements the same interface for
+// multi-instance deployments.
 export function createMemoryStore(): Store {
-  return { agents: new Map(), tools: new Map(), policies: new Map(), actions: new Map(), decisions: new Map() };
+  const agents = new Map<string, Agent>();
+  const tools = new Map<string, Tool>();
+  const policies = new Map<string, Policy>();
+  const actions = new Map<string, StoredAction>();
+  const decisions = new Map<string, StoredDecision>();
+
+  const assertLimit = (limit: number) => Math.min(Math.max(limit, 0), 5000);
+
+  return {
+    async listAgents() {
+      return [...agents.values()];
+    },
+    async getAgent(id) {
+      return agents.get(id);
+    },
+    async saveAgent(a) {
+      agents.set(a.id, a);
+    },
+    async deleteAgent(id) {
+      return agents.delete(id);
+    },
+
+    async listTools() {
+      return [...tools.values()];
+    },
+    async getTool(id) {
+      return tools.get(id);
+    },
+    async saveTool(t) {
+      tools.set(t.id, t);
+    },
+    async deleteTool(id) {
+      return tools.delete(id);
+    },
+
+    async listPolicies() {
+      return [...policies.values()];
+    },
+    async getPolicy(id) {
+      return policies.get(id);
+    },
+    async savePolicy(p) {
+      policies.set(p.id, p);
+    },
+    async deletePolicy(id) {
+      return policies.delete(id);
+    },
+
+    async getAction(id) {
+      return actions.get(id);
+    },
+    async saveAction(a) {
+      actions.set(a.id, a);
+    },
+    async deleteAction(id) {
+      return actions.delete(id);
+    },
+    async listRecentActions(limit) {
+      return [...actions.values()].slice(-assertLimit(limit));
+    },
+    async listActionsByAgent(agentId, limit) {
+      return [...actions.values()].filter((a) => a.agentId === agentId).slice(-assertLimit(limit)).reverse();
+    },
+
+    async getDecision(id) {
+      return decisions.get(id);
+    },
+    async saveDecision(d) {
+      decisions.set(d.id, d);
+    },
+    async deleteDecision(id) {
+      return decisions.delete(id);
+    },
+    async listDecisions(filter: DecisionFilter) {
+      let list = [...decisions.values()];
+      if (filter.outcome) list = list.filter((d) => d.outcome === filter.outcome);
+      if (filter.agentId || filter.toolId) {
+        const actionIds = new Set(
+          [...actions.values()]
+            .filter((a) => (!filter.agentId || a.agentId === filter.agentId) && (!filter.toolId || a.toolId === filter.toolId))
+            .map((a) => a.id),
+        );
+        list = list.filter((d) => actionIds.has(d.actionId));
+      }
+      const limit = Math.min(Number(filter.limit ?? 100) || 100, 500);
+      return list.slice(-limit).reverse();
+    },
+    async listReviewDecisions() {
+      return [...decisions.values()].filter((d) => d.outcome === "review");
+    },
+    async metrics() {
+      const all = [...decisions.values()];
+      const count = (f: (d: StoredDecision) => boolean) => all.filter(f).length;
+      return {
+        decisions_total: all.length,
+        allow_total: count((d) => d.outcome === "allow"),
+        review_total: count((d) => d.outcome === "review"),
+        block_total: count((d) => d.outcome === "block"),
+        fallback_total: count((d) => d.fallbackUsed === true),
+        approvals_total: count((d) => d.approvalStatus === "approved" || d.approvalStatus === "rejected"),
+        pending_total: count((d) => d.outcome === "review" && (!d.approvalStatus || d.approvalStatus === "pending")),
+      };
+    },
+    async purgeDecisions(before, opts) {      let deleted = 0;
+      let skippedApprovals = 0;
+      const removedActionIds: string[] = [];
+      for (const d of [...decisions.values()]) {
+        if (deleted >= opts.limit) break;
+        if (d.createdAt >= before) continue;
+        if (!opts.includeApprovals && (d.approvalStatus === "approved" || d.approvalStatus === "rejected")) {
+          skippedApprovals += 1;
+          continue;
+        }
+        decisions.delete(d.id);
+        removedActionIds.push(d.actionId);
+        deleted += 1;
+      }
+      // Replay links several decisions to one action: delete only orphans.
+      let actionsDeleted = 0;
+      const referenced = new Set([...decisions.values()].map((d) => d.actionId));
+      for (const actionId of new Set(removedActionIds)) {
+        if (!referenced.has(actionId) && actions.delete(actionId)) actionsDeleted += 1;
+      }
+      return { deleted, skippedApprovals, actionsDeleted };
+    },
+  };
 }
 
-export function seedDefaults(store: Store) {
-  const now = new Date();
-  if (store.agents.size === 0) {
-    store.agents.set("research-agent", {
-      id: "research-agent",
-      name: "Research Agent",
-      status: "active",
-      createdAt: now,
-    });
-    store.agents.set("deploy-agent", {
-      id: "deploy-agent",
-      name: "Deploy Agent",
-      status: "active",
-      createdAt: now,
-    });
+export async function seedStore(store: Store) {
+  if ((await store.listAgents()).length === 0) {
+    const now = new Date();
+    for (const a of [
+      { id: "research-agent", name: "Research Agent", status: "active", createdAt: now },
+      { id: "deploy-agent", name: "Deploy Agent", status: "active", createdAt: now },
+    ] as Agent[]) {
+      await store.saveAgent(a);
+    }
   }
-  if (store.tools.size === 0) {
-    store.tools.set("send_email", {
-      id: "send_email",
-      name: "send_email",
-      description: "Send email with optional attachments",
-      riskLevel: "high",
-    });
-    store.tools.set("query_database", {
-      id: "query_database",
-      name: "query_database",
-      description: "Read-only database query",
-      riskLevel: "medium",
-    });
-    store.tools.set("delete_resource", {
-      id: "delete_resource",
-      name: "delete_resource",
-      description: "Delete infrastructure resource",
-      riskLevel: "critical",
-    });
-    store.tools.set("refund", {
-      id: "refund",
-      name: "refund",
-      description: "Issue payment refund",
-      riskLevel: "high",
-    });
+  if ((await store.listTools()).length === 0) {
+    for (const t of [
+      { id: "send_email", name: "send_email", description: "Send email with optional attachments", riskLevel: "high" },
+      { id: "query_database", name: "query_database", description: "Read-only database query", riskLevel: "medium" },
+      { id: "delete_resource", name: "delete_resource", description: "Delete infrastructure resource", riskLevel: "critical" },
+      { id: "refund", name: "refund", description: "Issue payment refund", riskLevel: "high" },
+    ] as Tool[]) {
+      await store.saveTool(t);
+    }
   }
-  if (store.policies.size === 0) {
-    const mk = (
-      id: string,
-      name: string,
-      description: string,
-      mode: Policy["mode"],
-    ): Policy => ({ id, name, description, severity: "high", mode, enabled: true, version: 1 });
-    store.policies.set(
-      "pol_exfil",
+  if ((await store.listPolicies()).length === 0) {
+    const mk = (id: string, name: string, description: string, mode: Policy["mode"]): Policy => ({
+      id, name, description, severity: "high", mode, enabled: true, version: 1,
+    });
+    for (const p of [
       mk("pol_exfil", "Customer data", "Customer data must never be sent externally.", "block"),
-    );
-    store.policies.set(
-      "pol_creds",
       mk("pol_creds", "Credentials", "Credentials must never be transmitted externally.", "block"),
-    );
-    store.policies.set(
-      "pol_prod",
       mk("pol_prod", "Production deletion", "Production deletion requires human approval.", "review"),
-    );
-    store.policies.set(
-      "pol_pay",
       mk("pol_pay", "Payments", "Payments above $100 require human approval.", "review"),
-    );
+    ]) {
+      await store.savePolicy(p);
+    }
   }
 }
