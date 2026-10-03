@@ -141,6 +141,9 @@ importers:
       '@sentinel/schemas':
         specifier: workspace:*
         version: link:../schemas
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.6.3
