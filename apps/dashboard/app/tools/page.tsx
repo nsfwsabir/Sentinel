@@ -1,3 +1,5 @@
+import { Card, PageHeader, EmptyState } from "../components/ui";
+
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
 async function getTools() {
@@ -14,15 +16,32 @@ export default async function ToolsPage() {
   const tools = await getTools();
   return (
     <div>
-      <h1>Tools</h1>
+      <PageHeader title="Tools" subtitle="What agents are allowed to invoke, and how risky each is." />
       {tools.length === 0 ? (
-        <p className="muted">No tools registered.</p>
+        <EmptyState title="No tools registered." />
       ) : (
-        <table><thead><tr><th>Tool</th><th>Description</th><th>Risk</th></tr></thead>
-        <tbody>{tools.map((t) => (
-          <tr key={t.id}><td className="mono">{t.name}</td><td className="muted">{t.description}</td>
-          <td className="mono">{t.riskLevel}</td></tr>
-        ))}</tbody></table>
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="text-left text-neutral-500">
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Tool</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Description</th>
+                  <th className="border-b border-neutral-200 py-2 font-medium">Risk</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tools.map((t) => (
+                  <tr key={t.id} className="hover:bg-neutral-50">
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{t.name}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 text-neutral-600">{t.description}</td>
+                    <td className="border-b border-neutral-100 py-2 font-mono text-xs">{t.riskLevel}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );

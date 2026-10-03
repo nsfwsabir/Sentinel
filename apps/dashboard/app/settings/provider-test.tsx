@@ -24,21 +24,50 @@ export default function ProviderTest() {
 
   return (
     <div>
-      <button onClick={test} disabled={busy}>{busy ? "Testing…" : "Test connection"}</button>
+      <button
+        onClick={test}
+        disabled={busy}
+        className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-60"
+      >
+        {busy ? "Testing…" : "Test connection"}
+      </button>
       {result && (
-        <div style={{ marginTop: 12 }}>
+        <div className="mt-3">
           {result.ok ? (
-            <div>
-              <p><span className="badge allow">CONNECTED</span> <span className="mono">{result.provider} · {result.latencyMs}ms</span></p>
-              <table><thead><tr><th>Question</th><th>Answer</th><th>Confidence</th></tr></thead>
-              <tbody>{result.judgments.map((j) => (
-                <tr key={j.question}><td className="mono">{j.question}</td><td className="mono">{String(j.answer).toUpperCase()}</td><td className="mono">{j.confidence != null ? `${Math.round(j.confidence * 100)}%` : "—"}</td></tr>
-              ))}</tbody></table>
+            <div className="flex flex-col gap-2">
+              <p className="flex items-center gap-2 text-sm">
+                <span className="inline-block rounded-full border border-allow/40 bg-green-50 px-2.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide text-allow">
+                  Connected
+                </span>
+                <span className="font-mono text-xs text-neutral-500">{result.provider} · {result.latencyMs}ms</span>
+              </p>
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr className="text-left text-neutral-500">
+                    <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Question</th>
+                    <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Answer</th>
+                    <th className="border-b border-neutral-200 py-2 font-medium">Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.judgments.map((j) => (
+                    <tr key={j.question}>
+                      <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{j.question}</td>
+                      <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{String(j.answer).toUpperCase()}</td>
+                      <td className="border-b border-neutral-100 py-2 font-mono text-xs">{j.confidence != null ? `${Math.round(j.confidence * 100)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <div>
-              <p><span className="badge block">FAILED</span></p>
-              <p className="muted">{result.error}</p>
+            <div className="flex flex-col gap-1.5">
+              <p>
+                <span className="inline-block rounded-full border border-block/40 bg-red-50 px-2.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide text-block">
+                  Failed
+                </span>
+              </p>
+              <p className="text-sm text-neutral-500">{result.error}</p>
             </div>
           )}
         </div>

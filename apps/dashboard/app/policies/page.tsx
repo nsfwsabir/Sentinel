@@ -1,7 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Card, PageHeader } from "../components/ui";
 
 type Policy = { id: string; name: string; description: string; mode: string; enabled: boolean };
+
+function field(label: string, children: React.ReactNode) {
+  return (
+    <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+const inputCls = "rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-normal text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none";
 
 export default function PoliciesPage() {
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -59,30 +71,62 @@ export default function PoliciesPage() {
   }
 
   return (
-    <div>
-      <h1>Policies</h1>
-      {policies.length > 0 && (
-        <table><thead><tr><th>Name</th><th>Description</th><th>Enforcement</th><th>Enabled</th><th></th></tr></thead>
-        <tbody>{policies.map((p) => (
-          <tr key={p.id}><td>{p.name}</td><td className="muted">{p.description}</td>
-          <td className="mono">{p.mode}</td><td className="mono">{String(p.enabled)}</td>
-          <td><button className="secondary" onClick={() => toggle(p.id, !p.enabled)}>
-            {p.enabled ? "Disable" : "Enable"}
-          </button></td></tr>
-        ))}</tbody></table>
+    <div className="flex max-w-3xl flex-col gap-4">
+      <PageHeader title="Policies" subtitle="What Sentinel enforces, and how." />
+      {error && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-[#b91c1c]">{error}</p>
       )}
-      <h2>New policy</h2>
-      <div className="card" style={{ display: "grid", gap: 12, maxWidth: 560 }}>
-        {error && <p>{error}</p>}
-        <label>Policy name<input value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label>Description<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-        <label>Enforcement<select value={mode} onChange={(e) => setMode(e.target.value)}>
-          <option value="block">Block</option>
-          <option value="review">Require approval</option>
-          <option value="audit">Audit only</option>
-        </select></label>
-        <div><button onClick={save}>Save policy</button></div>
-      </div>
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr className="text-left text-neutral-500">
+                <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Name</th>
+                <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Description</th>
+                <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Enforcement</th>
+                <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Enabled</th>
+                <th className="border-b border-neutral-200 py-2 font-medium"><span className="sr-only">Toggle</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {policies.map((p) => (
+                <tr key={p.id} className="hover:bg-neutral-50">
+                  <td className="border-b border-neutral-100 py-2 pr-3 font-medium text-neutral-900">{p.name}</td>
+                  <td className="border-b border-neutral-100 py-2 pr-3 text-neutral-600">{p.description}</td>
+                  <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{p.mode}</td>
+                  <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{String(p.enabled)}</td>
+                  <td className="border-b border-neutral-100 py-2">
+                    <button
+                      onClick={() => toggle(p.id, !p.enabled)}
+                      className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-[13px] font-medium text-neutral-900 hover:bg-neutral-50"
+                    >
+                      {p.enabled ? "Disable" : "Enable"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card title="New policy">
+        <div className="grid max-w-xl gap-3">
+          {field("Policy name", <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />)}
+          {field("Description", <textarea className={inputCls} rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />)}
+          {field("Enforcement", (
+            <select className={inputCls} value={mode} onChange={(e) => setMode(e.target.value)}>
+              <option value="block">Block</option>
+              <option value="review">Require approval</option>
+              <option value="audit">Audit only</option>
+            </select>
+          ))}
+          <div>
+            <button onClick={save} className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
+              Save policy
+            </button>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

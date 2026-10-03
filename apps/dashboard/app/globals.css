@@ -8,24 +8,6 @@
   --color-block: #b91c1c;
 }
 
-/* Legacy hooks kept until pages migrate to utilities (Phase 1-3). */
-.mono { font-family: var(--font-mono); font-size: 12.5px; }
-.muted { color: #6b7280; }
-.card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #fff; }
-.row { display: flex; gap: 16px; }
-.metric { font-size: 28px; font-weight: 600; }
-.badge { display: inline-block; padding: 1px 8px; border: 1px solid #e5e7eb; border-radius: 999px; font-size: 12px; font-family: var(--font-mono); }
-.badge.allow { color: #15803d; border-color: #15803d; }
-.badge.review { color: #b45309; border-color: #b45309; }
-.badge.block { color: #b91c1c; border-color: #b91c1c; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; color: #6b7280; font-weight: 500; border-bottom: 1px solid #e5e7eb; padding: 8px; }
-td { border-bottom: 1px solid #e5e7eb; padding: 8px; }
-input, select, textarea, button { font: inherit; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 6px; }
-button { cursor: pointer; background: #111; color: #fff; border-color: #111; }
-button.secondary { background: #fff; color: #111; }
-button:disabled { opacity: 0.6; cursor: default; }
-pre { background: #f4f4f5; padding: 12px; border-radius: 6px; overflow: auto; }
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 2px solid #111;
   outline-offset: 2px;

@@ -1,4 +1,5 @@
 import ProviderTest from "./provider-test";
+import { Card, PageHeader } from "../components/ui";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
@@ -15,22 +16,30 @@ async function getProviderStatus(): Promise<{ provider: string; mode?: string; w
 export default async function SettingsPage() {
   const status = await getProviderStatus();
   return (
-    <div>
-      <h1>Settings</h1>
-      <div className="card" style={{ maxWidth: 560 }}>
-        <p>API: <span className="mono">{process.env.SENTINEL_API_URL ?? "http://localhost:3001"}</span></p>
-        <p className="muted">Thresholds: high 0.90 · review below 0.80 (configurable via API env).</p>
-        <p className="muted">Approvals require admin basic auth. Judgment provider key stays server-side.</p>
-      </div>
-      <h2>Laya Judgment Provider</h2>
-      <div className="card" style={{ maxWidth: 560 }}>
-        <p>Provider: <span className="mono">{status.provider}</span>{status.mode && <> · Mode: <span className="mono">{status.mode}</span></>}</p>
-        <p className="muted">Hosted (Laya Studio + your key) or self-hosted `laya-serve` via LAYA_API_URL. Sentinel never hosts Laya.</p>
-        {(status.warnings ?? []).map((w) => (
-          <p key={w} className="muted">{w}</p>
-        ))}
-        <ProviderTest />
-      </div>
+    <div className="flex max-w-3xl flex-col gap-4">
+      <PageHeader title="Settings" subtitle="Connection, thresholds, and provider configuration." />
+      <Card title="Connection">
+        <div className="flex flex-col gap-1.5 text-sm">
+          <p>API: <span className="font-mono text-[13px]">{process.env.SENTINEL_API_URL ?? "http://localhost:3001"}</span></p>
+          <p className="text-neutral-500">Thresholds: high 0.90 · review below 0.80 (configurable via API env).</p>
+          <p className="text-neutral-500">Approvals require admin basic auth. Judgment provider key stays server-side.</p>
+        </div>
+      </Card>
+      <Card title="Laya Judgment Provider">
+        <div className="flex flex-col gap-2 text-sm">
+          <p>
+            Provider: <span className="font-mono text-[13px]">{status.provider}</span>
+            {status.mode && <> · Mode: <span className="font-mono text-[13px]">{status.mode}</span></>}
+          </p>
+          <p className="text-neutral-500">Hosted (Laya Studio + your key) or self-hosted `laya-serve` via LAYA_API_URL. Sentinel never hosts Laya.</p>
+          {(status.warnings ?? []).map((w) => (
+            <p key={w} className="text-neutral-500">{w}</p>
+          ))}
+          <div className="mt-1">
+            <ProviderTest />
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

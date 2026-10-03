@@ -1,3 +1,5 @@
+import { Card, PageHeader, EmptyState } from "../components/ui";
+
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
 async function getJSON<T>(path: string): Promise<T[]> {
@@ -16,15 +18,34 @@ export default async function AgentsPage() {
   const agents = await getJSON<Agent>("/v1/agents");
   return (
     <div>
-      <h1>Agents</h1>
+      <PageHeader title="Agents" subtitle="Registered agents and their standing." />
       {agents.length === 0 ? (
-        <p className="muted">No agents registered.</p>
+        <EmptyState title="No agents registered." />
       ) : (
-        <table><thead><tr><th>Agent</th><th>ID</th><th>Status</th></tr></thead>
-        <tbody>{agents.map((a) => (
-          <tr key={a.id}><td><a href={`/agents/${a.id}`}>{a.name}</a></td>
-          <td className="mono">{a.id}</td><td className="mono">{a.status}</td></tr>
-        ))}</tbody></table>
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="text-left text-neutral-500">
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Agent</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">ID</th>
+                  <th className="border-b border-neutral-200 py-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map((a) => (
+                  <tr key={a.id} className="hover:bg-neutral-50">
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-medium text-neutral-900">
+                      <a className="underline decoration-neutral-300 underline-offset-2" href={`/agents/${a.id}`}>{a.name}</a>
+                    </td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{a.id}</td>
+                    <td className="border-b border-neutral-100 py-2 font-mono text-xs">{a.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );

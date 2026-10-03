@@ -1,3 +1,5 @@
+import { Card, PageHeader, EmptyState } from "../components/ui";
+
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
 async function getSignals() {
@@ -14,21 +16,36 @@ export default async function SignalsPage() {
   const signals = await getSignals();
   return (
     <div>
-      <h1>Signals</h1>
-      <p className="muted">External detection evidence (e.g. Falco). Signals never auto-decide.</p>
+      <PageHeader title="Signals" subtitle="External detection evidence (e.g. Falco). Signals never auto-decide." />
       {signals.length === 0 ? (
-        <p className="muted">No signals yet.</p>
+        <EmptyState title="No signals yet." />
       ) : (
-        <table><thead><tr><th>Time</th><th>Source</th><th>Rule</th><th>Priority</th><th>Summary</th></tr></thead>
-        <tbody>{signals.map((s) => (
-          <tr key={s.id}>
-            <td className="mono">{new Date(s.createdAt).toLocaleTimeString()}</td>
-            <td className="mono">{s.source}</td>
-            <td>{s.rule}</td>
-            <td className="mono">{s.priority}</td>
-            <td className="muted">{s.summary}</td>
-          </tr>
-        ))}</tbody></table>
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="text-left text-neutral-500">
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Time</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Source</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Rule</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Priority</th>
+                  <th className="border-b border-neutral-200 py-2 font-medium">Summary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {signals.map((s) => (
+                  <tr key={s.id} className="hover:bg-neutral-50">
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs text-neutral-500">{new Date(s.createdAt).toLocaleTimeString()}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{s.source}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 text-neutral-900">{s.rule}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{s.priority}</td>
+                    <td className="border-b border-neutral-100 py-2 text-neutral-600">{s.summary}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );
