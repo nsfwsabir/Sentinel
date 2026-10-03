@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { Card, PageHeader } from "../components/ui";
 
-type Policy = { id: string; name: string; description: string; mode: string; enabled: boolean };
+type Policy = { id: string; name: string; description: string; mode: string; enabled: boolean; version: number };
+type PolicyVersion = { version: number; name: string; description: string; mode: string; enabled: boolean; createdAt: string };
 
 function field(label: string, children: React.ReactNode) {
   return (
@@ -26,6 +27,33 @@ export default function PoliciesPage() {
   const [editDescription, setEditDescription] = useState("");
   const [editMode, setEditMode] = useState("review");
   const [dryRun, setDryRun] = useState<{ evaluated: number; would_block: number; would_review: number; would_remain_allowed: number } | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const [history, setHistory] = useState<PolicyVersion[]>([]);
+
+  async function showHistory(id: string) {
+    setError("");
+    if (historyId === id) {
+      setHistoryId(null);
+      return;
+    }
+    const list = await fetch(`/api/policies/${id}/versions`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => []);
+    setHistory(list);
+    setHistoryId(id);
+  }
+
+  async function revert(id: string, version: number) {
+    setError("");
+    const r = await fetch(`/api/policies/${id}/revert/${version}`, { method: "POST" });
+    if (!r.ok) {
+      const b = await r.json().catch(() => ({}));
+      setError((b as { error?: string }).error ?? "revert failed");
+      return;
+    }
+    setHistoryId(null);
+    await load();
+  }
 
   async function load() {
     const list = await fetch("/api/policies", { cache: "no-store" })
@@ -137,6 +165,7 @@ export default function PoliciesPage() {
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Name</th>
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Description</th>
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Enforcement</th>
+                <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Version</th>
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Enabled</th>
                 <th className="border-b border-neutral-200 py-2 font-medium"><span className="sr-only">Toggle</span></th>
               </tr>
@@ -158,6 +187,7 @@ export default function PoliciesPage() {
                         <option value="audit">Audit only</option>
                       </select>
                     </td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">v{p.version}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{String(p.enabled)}</td>
                     <td className="border-b border-neutral-100 py-2">
                       <div className="flex gap-2">
@@ -181,9 +211,16 @@ export default function PoliciesPage() {
                     <td className="border-b border-neutral-100 py-2 pr-3 font-medium text-neutral-900">{p.name}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 text-neutral-600">{p.description}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{p.mode}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">v{p.version}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{String(p.enabled)}</td>
                     <td className="border-b border-neutral-100 py-2">
                       <div className="flex gap-2">
+                        <button
+                          onClick={() => showHistory(p.id)}
+                          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-[13px] font-medium text-neutral-900 hover:bg-neutral-50"
+                        >
+                          History
+                        </button>
                         <button
                           onClick={() => startEdit(p)}
                           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-[13px] font-medium text-neutral-900 hover:bg-neutral-50"
@@ -205,6 +242,41 @@ export default function PoliciesPage() {
           </table>
         </div>
       </Card>
+      {historyId && (
+        <Card title={`History · ${policies.find((p) => p.id === historyId)?.name ?? historyId}`}>
+          {history.length === 0 ? (
+            <p className="text-[13px] text-neutral-500">No snapshots yet — history starts at the next edit.</p>
+          ) : (
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="text-left text-neutral-500">
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Version</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Name</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Enforcement</th>
+                  <th className="border-b border-neutral-200 py-2 font-medium"><span className="sr-only">Revert</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((v) => (
+                  <tr key={v.version}>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">v{v.version}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3">{v.name}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{v.mode}</td>
+                    <td className="border-b border-neutral-100 py-2">
+                      <button
+                        onClick={() => revert(historyId, v.version)}
+                        className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-[13px] font-medium text-neutral-900 hover:bg-neutral-50"
+                      >
+                        Revert
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
       <Card title="New policy">
         <div className="grid max-w-xl gap-3">
           {field("Policy name", <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />)}

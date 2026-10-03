@@ -452,4 +452,32 @@ describe("api", () => {
     });
     expect(deadNew.statusCode).toBe(401);
   });
+
+  it("snapshots policy versions and reverts append-only", async () => {
+    const app = await buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/policies",
+      headers: KEY,
+      payload: { id: "pol_hist", name: "Hist", description: "v1", severity: "low", mode: "audit", enabled: true, version: 1 },
+    });
+    expect(created.statusCode).toBe(201);
+
+    await app.inject({
+      method: "PATCH",
+      url: "/v1/policies/pol_hist",
+      headers: KEY,
+      payload: { description: "v2" },
+    });
+    const versions = await app.inject({ method: "GET", url: "/v1/policies/pol_hist/versions" });
+    expect(versions.json().map((v: { version: number }) => v.version)).toEqual([2, 1]);
+
+    const reverted = await app.inject({ method: "POST", url: "/v1/policies/pol_hist/revert/1", headers: KEY });
+    expect(reverted.json().description).toBe("v1");
+    expect(reverted.json().version).toBe(3);
+
+    const missing = await app.inject({ method: "POST", url: "/v1/policies/pol_hist/revert/99", headers: KEY });
+    expect(missing.statusCode).toBe(404);
+  });
 });

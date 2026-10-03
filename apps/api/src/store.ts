@@ -7,6 +7,7 @@ import type {
   StoredDecision,
   DecisionFilter,
   ApiKey,
+  PolicyVersion,
 } from "@sentinel/schemas";
 
 // In-memory Store: hermetic default for tests and zero-dependency dev.
@@ -19,6 +20,7 @@ export function createMemoryStore(): Store {
   const actions = new Map<string, StoredAction>();
   const decisions = new Map<string, StoredDecision>();
   const apiKeys = new Map<string, ApiKey>();
+  const policyVersions = new Map<string, PolicyVersion[]>();
 
   const assertLimit = (limit: number) => Math.min(Math.max(limit, 0), 5000);
 
@@ -115,6 +117,14 @@ export function createMemoryStore(): Store {
     },
     async deleteApiKey(id) {
       return apiKeys.delete(id);
+    },
+    async savePolicyVersion(v) {
+      const list = policyVersions.get(v.policyId) ?? [];
+      list.push(v);
+      policyVersions.set(v.policyId, list);
+    },
+    async listPolicyVersions(policyId) {
+      return [...(policyVersions.get(policyId) ?? [])].sort((a, b) => b.version - a.version);
     },
     async metrics() {      const all = [...decisions.values()];
       const count = (f: (d: StoredDecision) => boolean) => all.filter(f).length;

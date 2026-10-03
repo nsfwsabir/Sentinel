@@ -152,10 +152,24 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
 
   // Policies CRUD (TRD §9)
   app.get("/v1/policies", async () => store.listPolicies());
+  async function snapshotPolicy(p: { id: string; version: number; name: string; description: string; severity: string; mode: string; enabled: boolean }) {
+    await store.savePolicyVersion({
+      policyId: p.id,
+      version: p.version,
+      name: p.name,
+      description: p.description,
+      severity: p.severity,
+      mode: p.mode,
+      enabled: p.enabled,
+      createdAt: new Date(),
+    });
+  }
+
   app.post("/v1/policies", async (req, reply) => {
     await authenticateAgent(req.headers, withRegistry);
     const p = PolicySchema.parse(req.body);
     await store.savePolicy(p);
+    await snapshotPolicy(p);
     return reply.code(201).send(p);
   });
   app.get("/v1/policies/:id", async (req, reply) => {
@@ -173,6 +187,33 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     const next = { ...cur, ...((req.body ?? {}) as object), id: cur.id, version: cur.version + 1 };
     const p = PolicySchema.parse(next);
     await store.savePolicy(p);
+    await snapshotPolicy(p);
+    return p;
+  });
+  app.get("/v1/policies/:id/versions", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await store.getPolicy(id))) return reply.code(404).send({ error: "not found" });
+    return store.listPolicyVersions(id);
+  });
+  app.post("/v1/policies/:id/revert/:version", async (req, reply) => {
+    await authenticateAgent(req.headers, withRegistry);
+    const { id, version } = req.params as { id: string; version: string };
+    const cur = await store.getPolicy(id);
+    if (!cur) return reply.code(404).send({ error: "not found" });
+    const target = (await store.listPolicyVersions(id)).find((v) => v.version === Number(version));
+    if (!target) return reply.code(404).send({ error: "version not found" });
+    // Revert creates a NEW version with old content; history stays append-only.
+    const p = PolicySchema.parse({
+      ...cur,
+      name: target.name,
+      description: target.description,
+      severity: target.severity,
+      mode: target.mode,
+      enabled: target.enabled,
+      version: cur.version + 1,
+    });
+    await store.savePolicy(p);
+    await snapshotPolicy(p);
     return p;
   });
   app.delete("/v1/policies/:id", async (req, reply) => {

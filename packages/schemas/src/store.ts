@@ -35,6 +35,19 @@ export type PurgeResult = {
   actionsDeleted: number;
 };
 
+// Immutable snapshot of a policy at a version. Append-only: edits and
+// reverts create new versions, history is never mutated.
+export type PolicyVersion = {
+  policyId: string;
+  version: number;
+  name: string;
+  description: string;
+  severity: string;
+  mode: string;
+  enabled: boolean;
+  createdAt: Date;
+};
+
 // Runtime API-key registry. Only hashes are stored; plaintext is returned
 // once at create/rotate time and never again.
 export type ApiKey = {
@@ -82,6 +95,9 @@ export interface Store {
   saveApiKey(key: ApiKey): Promise<void>;
   findApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
   deleteApiKey(id: string): Promise<boolean>;
+  // Policy history
+  savePolicyVersion(v: PolicyVersion): Promise<void>;
+  listPolicyVersions(policyId: string): Promise<PolicyVersion[]>;
   /** TRD §12 counters, computed over the full store (no list truncation). */
   metrics(): Promise<{
     decisions_total: number;

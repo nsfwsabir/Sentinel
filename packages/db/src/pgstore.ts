@@ -282,6 +282,33 @@ export function createPgStore(): Store {
       const rows = await d().delete(s.apiKeys).where(eq(s.apiKeys.id, id)).returning({ id: s.apiKeys.id });
       return rows.length > 0;
     },
+    async savePolicyVersion(v) {
+      await d().insert(s.policyVersions).values({
+        policyId: v.policyId,
+        version: v.version,
+        name: v.name,
+        description: v.description,
+        severity: v.severity,
+        mode: v.mode,
+        enabled: v.enabled,
+        createdAt: v.createdAt,
+      }).onConflictDoNothing();
+    },
+    async listPolicyVersions(policyId) {
+      const rows = await d().select().from(s.policyVersions).where(eq(s.policyVersions.policyId, policyId));
+      return rows
+        .map((r) => ({
+          policyId: r.policyId,
+          version: r.version,
+          name: r.name,
+          description: r.description,
+          severity: r.severity,
+          mode: r.mode,
+          enabled: r.enabled,
+          createdAt: r.createdAt,
+        }))
+        .sort((a, b) => b.version - a.version);
+    },
     async metrics() {
       const n = async (where?: ReturnType<typeof eq>) => {
         const rows = where

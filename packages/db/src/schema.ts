@@ -70,3 +70,14 @@ export const apiKeys = pgTable("api_keys", {
   boundAgentId: text("bound_agent_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+export const policyVersions = pgTable("policy_versions", {
+  policyId: text("policy_id").notNull(),
+  version: integer("version").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").notNull(),
+  mode: text("mode").notNull(),
+  enabled: boolean("enabled").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
