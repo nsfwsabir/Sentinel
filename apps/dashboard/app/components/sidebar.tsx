@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -26,8 +27,9 @@ export default function Sidebar() {
   const path = usePathname();
   return (
     <nav className="flex flex-col gap-5 overflow-y-auto border-r border-neutral-200 bg-white px-3 py-5" aria-label="Primary">
-      <Link href="/" className="px-2 text-[15px] font-semibold tracking-tight text-neutral-900">
-        Sentinel
+      <Link href="/" className="flex items-center gap-2.5 px-2 pb-4">
+        <Image src="/logo.png" alt="Sentinel logo" width={30} height={30} className="rounded-md" priority />
+        <span className="text-xl font-semibold tracking-tight text-neutral-900">Sentinel</span>
       </Link>
       {GROUPS.map((g) => (
         <div key={g.label}>
