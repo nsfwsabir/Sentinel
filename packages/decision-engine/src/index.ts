@@ -4,6 +4,8 @@ export type Outcome = z.infer<typeof DecisionOutcome>;
 import type { DeterministicFinding } from "@sentinel/policy-engine";
 import type { JudgmentProvider, EvalState } from "@sentinel/judgment-provider";
 
+export { riskScore, type RiskBand } from "./risk.js";
+
 export type Thresholds = {
   highConfidence: number;
   reviewBelow: number;
