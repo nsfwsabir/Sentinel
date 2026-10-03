@@ -10,6 +10,7 @@ import type {
   StoredDecision,
   DecisionFilter,
   Judgment,
+  ApiKey,
 } from "@sentinel/schemas";
 
 // Postgres Store: the shared source of truth for multi-instance
@@ -61,8 +62,7 @@ export function createPgStore(): Store {
     confidence: r.confidence ?? undefined,
   });
 
-  const toDecision = (r: typeof s.decisions.$inferSelect, judgments: Judgment[]): StoredDecision => ({
-    id: r.id,
+  const toDecision = (r: typeof s.decisions.$inferSelect, judgments: Judgment[]): StoredDecision => ({    id: r.id,
     actionId: r.actionId,
     outcome: (["allow", "review", "block"].includes(r.outcome ?? "") ? r.outcome : "review") as StoredDecision["outcome"],
     confidence: r.confidence ?? 0,
@@ -260,6 +260,27 @@ export function createPgStore(): Store {
         if (gone.length > 0) actionsDeleted += 1;
       }
       return { deleted, skippedApprovals, actionsDeleted };
+    },
+    async listApiKeys() {
+      const rows = await d().select().from(s.apiKeys).orderBy(s.apiKeys.createdAt);
+      return rows.map((r) => ({ id: r.id, label: r.label, boundAgentId: r.boundAgentId ?? undefined, createdAt: r.createdAt }));
+    },
+    async saveApiKey(k) {
+      await d().insert(s.apiKeys).values({
+        id: k.id, label: k.label, keyHash: k.keyHash, boundAgentId: k.boundAgentId ?? null, createdAt: k.createdAt,
+      }).onConflictDoUpdate({
+        target: s.apiKeys.id,
+        set: { label: k.label, keyHash: k.keyHash, boundAgentId: k.boundAgentId ?? null },
+      });
+    },
+    async findApiKeyByHash(keyHash) {
+      const rows = await d().select().from(s.apiKeys).where(eq(s.apiKeys.keyHash, keyHash));
+      const r = rows[0];
+      return r ? { id: r.id, label: r.label, keyHash: r.keyHash, boundAgentId: r.boundAgentId ?? undefined, createdAt: r.createdAt } : undefined;
+    },
+    async deleteApiKey(id) {
+      const rows = await d().delete(s.apiKeys).where(eq(s.apiKeys.id, id)).returning({ id: s.apiKeys.id });
+      return rows.length > 0;
     },
     async metrics() {
       const n = async (where?: ReturnType<typeof eq>) => {

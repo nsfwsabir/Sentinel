@@ -82,4 +82,29 @@ describe("agentAuth", () => {
     const noSub = await sign({});
     await expect(authenticateAgent(authz(noSub), opts)).rejects.toMatchObject({ statusCode: 401 });
   });
+
+  it("authenticates registry keys, honoring agent binding", async () => {
+    const { hashApiKey } = await import("./agentAuth.js");
+    const { opts } = await setup();
+    const bound = { id: "k1", label: "b", keyHash: hashApiKey("tok-bound"), boundAgentId: "research-agent", createdAt: new Date() };
+    const open = { id: "k2", label: "o", keyHash: hashApiKey("tok-open"), createdAt: new Date() };
+    const withRegistry = {
+      ...opts,
+      staticKeys: [],
+      findApiKeyByHash: async (h: string) => [bound, open].find((k) => k.keyHash === h),
+    };
+    expect(await authenticateAgent({ "x-api-key": "tok-bound" }, withRegistry)).toEqual({
+      kind: "key",
+      agentId: "research-agent",
+      scopes: [],
+    });
+    expect(await authenticateAgent({ "x-api-key": "tok-open" }, withRegistry)).toEqual({
+      kind: "key",
+      agentId: undefined,
+      scopes: [],
+    });
+    await expect(authenticateAgent({ "x-api-key": "tok-gone" }, withRegistry)).rejects.toMatchObject({
+      statusCode: 401,
+    });
+  });
 });

@@ -389,4 +389,67 @@ describe("api", () => {
     expect(dry.json().evaluated).toBe(1);
     expect(dry.json().would_block).toBe(1);
   });
+
+  it("manages API keys: create, bound use, rotate, revoke", async () => {
+    const app = await buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
+
+    expect((await app.inject({ method: "GET", url: "/v1/api-keys" })).statusCode).toBe(401);
+    // Env bootstrap seeded dev-key-1.
+    const seeded = await app.inject({ method: "GET", url: "/v1/api-keys", headers: ADMIN });
+    expect(seeded.json().length).toBe(1);
+    expect(JSON.stringify(seeded.json())).not.toContain("dev-key-1");
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/api-keys",
+      headers: ADMIN,
+      payload: { label: "ci", boundAgentId: "research-agent" },
+    });
+    expect(created.statusCode).toBe(201);
+    const token = created.json().token as string;
+    expect(token.startsWith("sk_live_")).toBe(true);
+
+    // Bound key works for its agent, 403s as another.
+    const okUse = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { "x-api-key": token },
+      payload: { agentId: "research-agent", toolId: "query_database", arguments: { q: "select 1" }, context: {} },
+    });
+    expect(okUse.statusCode).toBe(200);
+    const spoof = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { "x-api-key": token },
+      payload: { agentId: "deploy-agent", toolId: "query_database", arguments: { q: "select 1" }, context: {} },
+    });
+    expect(spoof.statusCode).toBe(403);
+
+    // Rotate: old dies, new works. Revoke: gone entirely.
+    const rotated = await app.inject({
+      method: "POST",
+      url: `/v1/api-keys/${created.json().id}/rotate`,
+      headers: ADMIN,
+    });
+    const token2 = rotated.json().token as string;
+    expect(token2).not.toBe(token);
+    const deadOld = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { "x-api-key": token },
+      payload: { agentId: "research-agent", toolId: "query_database", arguments: {}, context: {} },
+    });
+    expect(deadOld.statusCode).toBe(401);
+
+    await app.inject({ method: "DELETE", url: `/v1/api-keys/${created.json().id}`, headers: ADMIN });
+    const deadNew = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { "x-api-key": token2 },
+      payload: { agentId: "research-agent", toolId: "query_database", arguments: {}, context: {} },
+    });
+    expect(deadNew.statusCode).toBe(401);
+  });
 });

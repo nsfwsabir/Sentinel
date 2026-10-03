@@ -35,6 +35,18 @@ export type PurgeResult = {
   actionsDeleted: number;
 };
 
+// Runtime API-key registry. Only hashes are stored; plaintext is returned
+// once at create/rotate time and never again.
+export type ApiKey = {
+  id: string;
+  label: string;
+  keyHash: string;
+  boundAgentId?: string;
+  createdAt: Date;
+};
+
+export type ApiKeyMeta = Omit<ApiKey, "keyHash">;
+
 export interface Store {
   // Agents
   listAgents(): Promise<Agent[]>;
@@ -65,6 +77,11 @@ export interface Store {
   listReviewDecisions(): Promise<StoredDecision[]>;
   /** Delete decisions before `before`; approvals kept unless included. */
   purgeDecisions(before: Date, opts: { includeApprovals: boolean; limit: number }): Promise<PurgeResult>;
+  // API keys
+  listApiKeys(): Promise<ApiKeyMeta[]>;
+  saveApiKey(key: ApiKey): Promise<void>;
+  findApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
+  deleteApiKey(id: string): Promise<boolean>;
   /** TRD §12 counters, computed over the full store (no list truncation). */
   metrics(): Promise<{
     decisions_total: number;

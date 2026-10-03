@@ -6,7 +6,7 @@ import { decide } from "@sentinel/decision-engine";
 import { providerFromEnv } from "@sentinel/judgment-provider";
 import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
 import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
-import { authenticateAgent, type AgentAuthOptions } from "./agentAuth.js";
+import { authenticateAgent, agentAuthFromEnv, seedEnvKeys, generateApiKey, hashApiKey, type AgentAuthOptions } from "./agentAuth.js";
 import { childLogger } from "@sentinel/logger";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
@@ -24,9 +24,15 @@ async function requireAdmin(req: { headers: Record<string, string | string[] | u
 
 export async function buildServer(store: Store = createMemoryStore(), opts?: { agentAuth?: AgentAuthOptions }): Promise<FastifyInstance> {
   await seedStore(store);
+  const agentAuthCfg = opts?.agentAuth ?? agentAuthFromEnv();
+  await seedEnvKeys(store, agentAuthCfg.staticKeys);
+  // Registry lookup for every request (revocation must take effect).
+  const withRegistry: typeof agentAuthCfg = {
+    ...agentAuthCfg,
+    findApiKeyByHash: (h) => store.findApiKeyByHash(h),
+  };
   const app = Fastify({ logger: false });
   const provider = providerFromEnv();
-  const agentAuth = opts?.agentAuth;
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     const status = err.statusCode ?? 500;
@@ -37,14 +43,16 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
 
   // TRD §4 evaluation pipeline
   app.post("/v1/actions/evaluate", async (req, reply) => {
-    const identity = await authenticateAgent(req.headers, agentAuth);
+    const identity = await authenticateAgent(req.headers, withRegistry);
     const requestId = randomUUID();
     const started = Date.now();
     const parsed = EvaluateRequestSchema.parse(req.body);
 
-    // OIDC-bound identity overrides self-assertion: a token for agent X
+    // Bound identity overrides self-assertion: a credential for agent X
     // cannot submit actions as agent Y.
-    if (identity.kind === "oidc" && parsed.agentId !== identity.agentId) {
+    const boundId =
+      identity.kind === "oidc" ? identity.agentId : identity.kind === "key" ? identity.agentId : undefined;
+    if (boundId && parsed.agentId !== boundId) {
       return reply.code(403).send({ error: "agent identity mismatch" });
     }
 
@@ -82,7 +90,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   // V1.5 decision replay: re-run a stored action through current policies.
   // Links the new decision to the SAME action for before/after comparison.
   app.post("/v1/actions/:id/replay", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { id } = req.params as { id: string };
     const stored = await store.getAction(id);
     if (!stored) return reply.code(404).send({ error: "unknown action" });
@@ -109,7 +117,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   // V1.5 policy dry-run: deterministic only (no provider call), counts how a
   // candidate policy would have treated stored actions.
   app.post("/v1/policies/dry-run", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const candidate = PolicySchema.parse(req.body);
     const q = (req.query ?? {}) as { limit?: string };
     const limit = Math.min(Number(q.limit ?? 200) || 200, 1000);
@@ -145,7 +153,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   // Policies CRUD (TRD §9)
   app.get("/v1/policies", async () => store.listPolicies());
   app.post("/v1/policies", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const p = PolicySchema.parse(req.body);
     await store.savePolicy(p);
     return reply.code(201).send(p);
@@ -157,7 +165,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return p;
   });
   app.patch("/v1/policies/:id", async (req) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { id } = req.params as { id: string };
     const cur = await store.getPolicy(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
@@ -168,7 +176,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return p;
   });
   app.delete("/v1/policies/:id", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { id } = req.params as { id: string };
     if (!(await store.deletePolicy(id))) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
@@ -201,9 +209,8 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
       await requireAdmin(req as never);
       authorized = true;
     } catch {
-      const identity = await authenticateAgent(headers, agentAuth).catch(() => null);
-      authorized =
-        identity?.kind === "oidc" && identity.scopes.includes("sentinel:approvers");
+      const identity = await authenticateAgent(headers, withRegistry).catch(() => null);
+      authorized = identity !== null && "scopes" in identity && identity.scopes.includes("sentinel:approvers");
     }
     if (!authorized) {
       return (reply as { code: (n: number) => { send: (b: unknown) => unknown } })
@@ -226,16 +233,69 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   app.post("/v1/approvals/:id/approve", setApproval("approved"));
   app.post("/v1/approvals/:id/reject", setApproval("rejected"));
 
+  // API key registry (admin-only). Plaintext tokens are returned once at
+  // create/rotate time; only sha256 hashes are stored, never the keys.
+  app.get("/v1/api-keys", async (req) => {
+    await requireAdmin(req);
+    return store.listApiKeys();
+  });
+  app.post("/v1/api-keys", async (req, reply) => {
+    await requireAdmin(req);
+    const body = (req.body ?? {}) as { label?: unknown; boundAgentId?: unknown };
+    if (typeof body.label !== "string" || body.label.length === 0) {
+      return reply.code(400).send({ error: "label is required" });
+    }
+    if (body.boundAgentId !== undefined) {
+      if (typeof body.boundAgentId !== "string" || !(await store.getAgent(body.boundAgentId))) {
+        return reply.code(404).send({ error: "unknown agent for boundAgentId" });
+      }
+    }
+    const { id, token } = generateApiKey();
+    const meta = {
+      id,
+      label: body.label,
+      boundAgentId: typeof body.boundAgentId === "string" ? body.boundAgentId : undefined,
+      createdAt: new Date(),
+    };
+    await store.saveApiKey({ ...meta, keyHash: hashApiKey(token) });
+    childLogger({ decision: `key:create:${id}` }).info("apikey");
+    return reply.code(201).send({ ...meta, token });
+  });
+  app.post("/v1/api-keys/:id/rotate", async (req, reply) => {
+    await requireAdmin(req);
+    const { id } = req.params as { id: string };
+    const cur = (await store.listApiKeys()).find((k) => k.id === id);
+    if (!cur) return reply.code(404).send({ error: "not found" });
+    const { token } = generateApiKey();
+    // Re-save with a new hash (id/label/binding preserved; old token dies).
+    await store.saveApiKey({
+      id: cur.id,
+      label: cur.label,
+      boundAgentId: cur.boundAgentId,
+      createdAt: cur.createdAt,
+      keyHash: hashApiKey(token),
+    });
+    childLogger({ decision: `key:rotate:${id}` }).info("apikey");
+    return { ...cur, token };
+  });
+  app.delete("/v1/api-keys/:id", async (req, reply) => {
+    await requireAdmin(req);
+    const { id } = req.params as { id: string };
+    if (!(await store.deleteApiKey(id))) return reply.code(404).send({ error: "not found" });
+    childLogger({ decision: `key:revoke:${id}` }).info("apikey");
+    return reply.code(204).send();
+  });
+
   // Agents + tools — PRD §9 success criteria steps 1 & 3.
   app.get("/v1/agents", async () => store.listAgents());
   app.post("/v1/agents", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const a = AgentSchema.parse({ ...(req.body as object), createdAt: new Date().toISOString() });
     await store.saveAgent(a);
     return reply.code(201).send(a);
   });
   app.patch("/v1/agents/:id", async (req) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { id } = req.params as { id: string };
     const cur = await store.getAgent(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
@@ -251,14 +311,14 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return { ...a, recentActions };
   });
   app.delete("/v1/agents/:id", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { id } = req.params as { id: string };
     if (!(await store.deleteAgent(id))) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
   });
   app.get("/v1/tools", async () => store.listTools());
   app.post("/v1/tools", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const t = ToolSchema.parse(req.body);
     await store.saveTool(t);
     return reply.code(201).send(t);
@@ -270,7 +330,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return t;
   });
   app.patch("/v1/tools/:id", async (req) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { id } = req.params as { id: string };
     const cur = await store.getTool(id);
     if (!cur) throw Object.assign(new Error("not found"), { statusCode: 404 });
@@ -279,7 +339,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return next;
   });
   app.delete("/v1/tools/:id", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { id } = req.params as { id: string };
     if (!(await store.deleteTool(id))) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
@@ -300,7 +360,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   const SIGNAL_CAP = 500;
 
   app.post("/v1/signals/:source", async (req, reply) => {
-    await authenticateAgent(req.headers, agentAuth);
+    await authenticateAgent(req.headers, withRegistry);
     const { source } = req.params as { source: string };
     if (source !== "falco") return reply.code(404).send({ error: "unknown signal source" });
     const body = (req.body ?? {}) as Record<string, unknown>;

@@ -88,4 +88,22 @@ describe.skipIf(!url)("pg integration", () => {
     await store.deleteAgent(`c_ag_${suffix}`);
     expect(await store.getAgent(`c_ag_${suffix}`)).toBeUndefined();
   });
+
+  it("pgstore persists API keys with hashes only", async () => {
+    process.env.DATABASE_URL = url;
+    const { createPgStore } = await import("./pgstore.js");
+    const { createHash } = await import("node:crypto");
+    const store = createPgStore();
+    const hash = createHash("sha256").update("tok-xyz", "utf8").digest("hex");
+
+    await store.saveApiKey({ id: "c_key_1", label: "ci", keyHash: hash, boundAgentId: "a", createdAt: new Date() });
+    const found = await store.findApiKeyByHash(hash);
+    expect(found?.boundAgentId).toBe("a");
+    const listed = await store.listApiKeys();
+    const listedOne = listed.find((k) => k.id === "c_key_1");
+    expect(listedOne).toBeDefined();
+    expect("keyHash" in (listedOne as object)).toBe(false);
+    expect(await store.deleteApiKey("c_key_1")).toBe(true);
+    expect(await store.findApiKeyByHash(hash)).toBeUndefined();
+  });
 });

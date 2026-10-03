@@ -62,3 +62,11 @@ export const judgments = pgTable("judgments", {
   probabilities: jsonb("probabilities"),
   confidence: real("confidence"),
 });
+
+export const apiKeys = pgTable("api_keys", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  keyHash: text("key_hash").notNull().unique(),
+  boundAgentId: text("bound_agent_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
