@@ -5,7 +5,9 @@ import postgres from "postgres";
 const DDL = `
 CREATE TABLE IF NOT EXISTS agents (id text primary key, name text not null, description text, status text not null default 'active', created_at timestamptz not null default now());
 CREATE TABLE IF NOT EXISTS tools (id text primary key, name text not null, description text not null, risk_level text not null default 'medium');
-CREATE TABLE IF NOT EXISTS policies (id text primary key, name text not null, description text not null, severity text not null default 'medium', mode text not null default 'review', enabled boolean not null default true, version integer not null default 1);
+CREATE TABLE IF NOT EXISTS policies (id text primary key, name text not null, description text not null, severity text not null default 'medium', mode text not null default 'review', enabled boolean not null default true, version integer not null default 1, scope text not null default 'org', agent_ids jsonb not null default '[]');
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS scope text not null default 'org';
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS agent_ids jsonb not null default '[]';
 CREATE TABLE IF NOT EXISTS actions (id text primary key, agent_id text not null references agents(id), tool_id text not null references tools(id), task text, arguments jsonb not null default '{}', context jsonb not null default '{}', created_at timestamptz not null default now());
 CREATE TABLE IF NOT EXISTS decisions (id text primary key, action_id text not null references actions(id), outcome text not null, confidence real, reason text, policy_ids jsonb not null default '[]', approval_status text, fallback_used boolean not null default false, evaluation_duration_ms integer, provider_duration_ms integer, created_at timestamptz not null default now());
 CREATE TABLE IF NOT EXISTS judgments (id text primary key, decision_id text not null references decisions(id), question text not null, type text not null default 'noul', answer jsonb, probabilities jsonb, confidence real);

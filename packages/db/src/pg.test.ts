@@ -50,7 +50,7 @@ describe.skipIf(!url)("pg integration", () => {
     await store.saveTool({ id: `c_tool_${suffix}`, name: "t", description: "d", riskLevel: "low" });
     await store.savePolicy({
       id: `c_pol_${suffix}`, name: "p", description: "d", severity: "low",
-      mode: "audit", enabled: true, version: 1,
+      mode: "audit", enabled: true, version: 1, scope: "org", agentIds: [],
     });
     expect((await store.listPolicies()).some((p) => p.id === `c_pol_${suffix}`)).toBe(true);
 

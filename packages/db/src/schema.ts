@@ -26,6 +26,8 @@ export const policies = pgTable("policies", {
   mode: text("mode").notNull().default("review"),
   enabled: boolean("enabled").notNull().default(true),
   version: integer("version").notNull().default(1),
+  scope: text("scope").notNull().default("org"),
+  agentIds: jsonb("agent_ids").notNull().default([]),
 });
 
 export const actions = pgTable("actions", {

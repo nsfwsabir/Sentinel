@@ -2,7 +2,7 @@ import { createMemoryStore, seedStore } from "./store.js";
 import type { Store } from "@sentinel/schemas";
 import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
 import { evaluatePolicies } from "@sentinel/policy-opa";
-import { decide } from "@sentinel/decision-engine";
+import { decide, riskScore } from "@sentinel/decision-engine";
 import { providerFromEnv } from "@sentinel/judgment-provider";
 import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
 import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
@@ -126,6 +126,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     let wouldReview = 0;
     const matchedActionIds: string[] = [];
     for (const a of actions) {
+      if (candidate.scope === "agent" && !candidate.agentIds.includes(a.agentId)) continue;
       const tool = await store.getTool(a.toolId);
       const { findings } = evaluateDeterministic(
         { agentId: a.agentId, toolId: a.toolId, toolName: tool?.name, arguments: a.arguments, context: {} },
@@ -238,7 +239,14 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     const d = await store.getDecision(id);
     if (!d) return reply.code(404).send({ error: "not found" });
     const action = await store.getAction(d.actionId);
-    return { ...d, action };
+    const policies = await store.listPolicies();
+    const byId = new Map(policies.map((p) => [p.id, p]));
+    const tool = action ? await store.getTool(action.toolId) : undefined;
+    const risk = riskScore({
+      toolRisk: tool?.riskLevel,
+      severities: d.policyIds.map((pid) => byId.get(pid)?.severity ?? "low"),
+    });
+    return { ...d, action, risk };
   });
   app.get("/v1/approvals", async () => store.listReviewDecisions());
   const setApproval = (status: "approved" | "rejected") => async (req: unknown, reply: unknown) => {
@@ -516,7 +524,12 @@ async function runEvaluation(
     reuseActionId?: string;
   },
 ) {
-  const policies = await store.listPolicies();
+  const allPolicies = await store.listPolicies();
+  // Scope filter: org (or legacy scopeless) policies apply everywhere;
+  // agent-scoped policies apply only to their listed agents.
+  const policies = allPolicies.filter(
+    (p) => p.scope !== "agent" || p.agentIds.includes(input.agentId),
+  );
   // OPA WASM first, TypeScript engine on any failure. Same output shape.
   const { findings, matchedPolicyIds } = await evaluatePolicies(
     {
@@ -590,10 +603,16 @@ async function runEvaluation(
 
   // Writes go straight to the configured store (memory or Postgres);
   // no mirror step: the store IS the source of truth.
+  const byId = new Map(policies.map((p) => [p.id, p]));
+  const risk = riskScore({
+    toolRisk: input.tool.riskLevel,
+    severities: matchedPolicyIds.map((id) => byId.get(id)?.severity ?? "low"),
+  });
   return {
     decision: decision.outcome,
     confidence: decision.confidence,
     reason: decision.reason,
     decisionId,
+    risk,
   };
 }

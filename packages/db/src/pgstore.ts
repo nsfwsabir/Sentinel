@@ -50,6 +50,8 @@ export function createPgStore(): Store {
     mode: (["block", "review", "audit"].includes(r.mode ?? "") ? r.mode : "review") as Policy["mode"],
     enabled: r.enabled,
     version: r.version,
+    scope: (r.scope === "agent" ? "agent" : "org") as Policy["scope"],
+    agentIds: (Array.isArray(r.agentIds) ? r.agentIds : []) as string[],
   });
 
   const toJudgment = (r: typeof s.judgments.$inferSelect): Judgment => ({
@@ -140,9 +142,10 @@ export function createPgStore(): Store {
       await d().insert(s.policies).values({
         id: p.id, name: p.name, description: p.description, severity: p.severity,
         mode: p.mode, enabled: p.enabled, version: p.version,
+        scope: p.scope, agentIds: p.agentIds,
       }).onConflictDoUpdate({
         target: s.policies.id,
-        set: { name: p.name, description: p.description, severity: p.severity, mode: p.mode, enabled: p.enabled, version: p.version },
+        set: { name: p.name, description: p.description, severity: p.severity, mode: p.mode, enabled: p.enabled, version: p.version, scope: p.scope, agentIds: p.agentIds },
       });
     },
     async deletePolicy(id) {

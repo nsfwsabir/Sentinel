@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Card, PageHeader } from "../components/ui";
 
-type Policy = { id: string; name: string; description: string; mode: string; enabled: boolean; version: number };
+type Policy = { id: string; name: string; description: string; mode: string; enabled: boolean; version: number; scope?: string; agentIds?: string[] };
 type PolicyVersion = { version: number; name: string; description: string; mode: string; enabled: boolean; createdAt: string };
 
 function field(label: string, children: React.ReactNode) {
@@ -21,11 +21,15 @@ export default function PoliciesPage() {
   const [name, setName] = useState("Production deletion");
   const [description, setDescription] = useState("Production resources may not be deleted without human approval.");
   const [mode, setMode] = useState("review");
+  const [scope, setScope] = useState("org");
+  const [agentIds, setAgentIds] = useState("");
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editMode, setEditMode] = useState("review");
+  const [editScope, setEditScope] = useState("org");
+  const [editAgentIds, setEditAgentIds] = useState("");
   const [dryRun, setDryRun] = useState<{ evaluated: number; would_block: number; would_review: number; would_remain_allowed: number } | null>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [history, setHistory] = useState<PolicyVersion[]>([]);
@@ -85,6 +89,8 @@ export default function PoliciesPage() {
     setEditName(p.name);
     setEditDescription(p.description);
     setEditMode(p.mode);
+    setEditScope(p.scope ?? "org");
+    setEditAgentIds((p.agentIds ?? []).join(", "));
     setError("");
   }
 
@@ -93,7 +99,7 @@ export default function PoliciesPage() {
     const r = await fetch("/api/policies", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, name: editName, description: editDescription, mode: editMode }),
+      body: JSON.stringify({ id, name: editName, description: editDescription, mode: editMode, scope: editScope, agentIds: editAgentIds.split(",").map((s) => s.trim()).filter(Boolean) }),
     });
     if (!r.ok) {
       const b = await r.json().catch(() => ({}));
@@ -141,6 +147,8 @@ export default function PoliciesPage() {
         mode,
         enabled: true,
         version: 1,
+        scope,
+        agentIds: agentIds.split(",").map((s) => s.trim()).filter(Boolean),
       }),
     });
     if (!r.ok) {
@@ -165,6 +173,7 @@ export default function PoliciesPage() {
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Name</th>
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Description</th>
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Enforcement</th>
+                <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Scope</th>
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Version</th>
                 <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Enabled</th>
                 <th className="border-b border-neutral-200 py-2 font-medium"><span className="sr-only">Toggle</span></th>
@@ -186,6 +195,15 @@ export default function PoliciesPage() {
                         <option value="review">Require approval</option>
                         <option value="audit">Audit only</option>
                       </select>
+                    </td>
+                    <td className="border-b border-neutral-100 py-2 pr-3">
+                      <select className={inputCls} value={editScope} onChange={(e) => setEditScope(e.target.value)} aria-label="Scope">
+                        <option value="org">Org</option>
+                        <option value="agent">Agents</option>
+                      </select>
+                      {editScope === "agent" && (
+                        <input className={`${inputCls} mt-1 font-mono text-xs`} value={editAgentIds} onChange={(e) => setEditAgentIds(e.target.value)} aria-label="Agent IDs" placeholder="research-agent" />
+                      )}
                     </td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">v{p.version}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{String(p.enabled)}</td>
@@ -211,6 +229,7 @@ export default function PoliciesPage() {
                     <td className="border-b border-neutral-100 py-2 pr-3 font-medium text-neutral-900">{p.name}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 text-neutral-600">{p.description}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{p.mode}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs" title={(p.agentIds ?? []).join(", ")}>{p.scope ?? "org"}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">v{p.version}</td>
                     <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{String(p.enabled)}</td>
                     <td className="border-b border-neutral-100 py-2">
@@ -287,6 +306,15 @@ export default function PoliciesPage() {
               <option value="review">Require approval</option>
               <option value="audit">Audit only</option>
             </select>
+          ))}
+          {field("Scope", (
+            <select className={inputCls} value={scope} onChange={(e) => setScope(e.target.value)}>
+              <option value="org">Organization-wide</option>
+              <option value="agent">Specific agents</option>
+            </select>
+          ))}
+          {scope === "agent" && field("Agent IDs (comma-separated)", (
+            <input className={`${inputCls} font-mono text-xs`} value={agentIds} onChange={(e) => setAgentIds(e.target.value)} placeholder="research-agent, support-agent" />
           ))}
           <div className="flex gap-2">
             <button onClick={save} className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">

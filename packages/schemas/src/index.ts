@@ -24,6 +24,7 @@ export type Tool = z.infer<typeof ToolSchema>;
 
 export const Severity = z.enum(["low", "medium", "high", "critical"]);
 export const PolicyMode = z.enum(["block", "review", "audit"]);
+export const PolicyScope = z.enum(["org", "agent"]);
 export const PolicySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -32,6 +33,9 @@ export const PolicySchema = z.object({
   mode: PolicyMode,
   enabled: z.boolean(),
   version: z.number().int().positive(),
+  // Missing scope = org: preserves current behavior for existing policies.
+  scope: PolicyScope.default("org"),
+  agentIds: z.array(z.string().min(1)).default([]),
 });
 export type Policy = z.infer<typeof PolicySchema>;
 

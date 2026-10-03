@@ -480,4 +480,40 @@ describe("api", () => {
     const missing = await app.inject({ method: "POST", url: "/v1/policies/pol_hist/revert/99", headers: KEY });
     expect(missing.statusCode).toBe(404);
   });
+
+  it("applies agent-scoped policies only to listed agents", async () => {
+    const app = await buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    // Disable the org payment policy so only the scoped one can fire.
+    await app.inject({ method: "PATCH", url: "/v1/policies/pol_pay", headers: KEY, payload: { enabled: false } });
+    await app.inject({
+      method: "POST",
+      url: "/v1/policies",
+      headers: KEY,
+      payload: {
+        id: "pol_scoped", name: "Scoped payments", description: "Payments above $100 require human approval.",
+        severity: "high", mode: "review", enabled: true, version: 1,
+        scope: "agent", agentIds: ["research-agent"],
+      },
+    });
+    const args = { amount: 500 };
+    const scoped = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: KEY,
+      payload: { agentId: "research-agent", toolId: "refund", arguments: args, context: {} },
+    });
+    expect(scoped.json().decision).toBe("review");
+    const scopedDetail = await app.inject({ method: "GET", url: `/v1/decisions/${scoped.json().decisionId}` });
+    expect(scopedDetail.json().policyIds).toContain("pol_scoped");
+
+    // deploy-agent: scoped policy skipped, mock provider sees nothing risky.
+    const unscoped = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: KEY,
+      payload: { agentId: "deploy-agent", toolId: "refund", arguments: args, context: {} },
+    });
+    expect(unscoped.json().decision).toBe("allow");
+  });
 });

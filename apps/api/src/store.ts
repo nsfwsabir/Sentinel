@@ -186,6 +186,7 @@ export async function seedStore(store: Store) {
   if ((await store.listPolicies()).length === 0) {
     const mk = (id: string, name: string, description: string, mode: Policy["mode"]): Policy => ({
       id, name, description, severity: "high", mode, enabled: true, version: 1,
+      scope: "org", agentIds: [],
     });
     for (const p of [
       mk("pol_exfil", "Customer data", "Customer data must never be sent externally.", "block"),

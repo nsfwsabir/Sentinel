@@ -18,6 +18,7 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
   const d = (await r.json()) as {
     id: string; outcome: string; reason: string; confidence: number;
     approvalStatus?: string;
+    risk?: { score: number; band: string };
     policyIds: string[]; judgments: { question: string; answer: unknown; confidence?: number }[];
     action?: { toolId: string; agentId: string; arguments: unknown };
   };
@@ -28,6 +29,11 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <StatusPill value={d.outcome} />
           <h1 className="font-mono text-lg text-neutral-900">{d.action?.toolId}</h1>
+          {d.risk && (
+            <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-0.5 font-mono text-[11px] text-neutral-600">
+              RISK {d.risk.score} · {d.risk.band.toUpperCase()}
+            </span>
+          )}
         </div>
         <p className="mt-1 font-mono text-xs text-neutral-500">{d.action?.agentId} · {d.id}</p>
       </div>
