@@ -345,6 +345,51 @@ export function buildServer(store: Store = createMemoryStore(), opts?: { agentAu
     return signals.filter((s) => !q.source || s.source === q.source).slice(0, limit);
   });
 
+  // Retention (TRD §10): purge decisions created before a cutoff.
+  // Admin-only. Approved/rejected decisions are audit evidence and kept
+  // unless includeApprovals=true. Orphaned actions are removed with their
+  // last referencing decision. PG mirror follows best-effort.
+  app.delete("/v1/decisions", async (req, reply) => {
+    await requireAdmin(req);
+    const q = req.query as { before?: string; includeApprovals?: string; limit?: string };
+    if (!q.before) return reply.code(400).send({ error: "before (ISO date) is required" });
+    const cutoff = new Date(q.before);
+    if (Number.isNaN(cutoff.getTime())) return reply.code(400).send({ error: "before must be a valid ISO date" });
+    const includeApprovals = q.includeApprovals === "true";
+    const limit = Math.min(Number(q.limit ?? 1000) || 1000, 5000);
+
+    let deleted = 0;
+    let skippedApprovals = 0;
+    const removedDecisionIds: string[] = [];
+    const removedActionIds: string[] = [];
+    for (const d of [...store.decisions.values()]) {
+      if (deleted >= limit) break;
+      if (d.createdAt >= cutoff) continue;
+      if (!includeApprovals && (d.approvalStatus === "approved" || d.approvalStatus === "rejected")) {
+        skippedApprovals += 1;
+        continue;
+      }
+      store.decisions.delete(d.id);
+      removedDecisionIds.push(d.id);
+      removedActionIds.push(d.actionId);
+      deleted += 1;
+    }
+    // Remove actions orphaned by the purge (replay links several decisions
+    // to one action, so only delete when unreferenced).
+    let actionsDeleted = 0;
+    const purgedActionIds: string[] = [];
+    const referenced = new Set([...store.decisions.values()].map((d) => d.actionId));
+    for (const actionId of new Set(removedActionIds)) {
+      if (!referenced.has(actionId) && store.actions.delete(actionId)) {
+        actionsDeleted += 1;
+        purgedActionIds.push(actionId);
+      }
+    }
+    childLogger({ decision: `purge:${deleted}` }).info("retention");
+    persistPurge(removedDecisionIds, purgedActionIds).catch(() => {});
+    return { deleted, skippedApprovals, actionsDeleted };
+  });
+
   // TRD §12 metrics — derived from decisions so they survive restarts via PG hydrate.
   app.get("/v1/metrics", async () => {
     const all = [...store.decisions.values()];
@@ -579,5 +624,20 @@ async function persistAudit(input: {
       answer: j.answer as object,
       confidence: j.confidence ?? null,
     });
+  }
+}
+
+/** Best-effort PG mirror of a retention purge (FK order: judgments first). */
+async function persistPurge(decisionIds: string[], actionIds: string[]): Promise<void> {
+  if (decisionIds.length === 0 && actionIds.length === 0) return;
+  const { isDbConfigured, db, actions, decisions, judgments, inArray } = await import("@sentinel/db");
+  if (!isDbConfigured()) return;
+  const d = db();
+  if (decisionIds.length > 0) {
+    await d.delete(judgments).where(inArray(judgments.decisionId, decisionIds));
+    await d.delete(decisions).where(inArray(decisions.id, decisionIds));
+  }
+  if (actionIds.length > 0) {
+    await d.delete(actions).where(inArray(actions.id, actionIds));
   }
 }

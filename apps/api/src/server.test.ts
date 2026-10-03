@@ -310,6 +310,45 @@ describe("api", () => {
     expect(list.json()[0].rule).toBe("Shell in sentinel-api container");
   });
 
+  it("purges old decisions but keeps approvals unless asked", async () => {
+    const app = buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
+
+    expect((await app.inject({ method: "DELETE", url: "/v1/decisions?before=2099-01-01" })).statusCode).toBe(401);
+    expect(
+      (await app.inject({ method: "DELETE", url: "/v1/decisions", headers: ADMIN })).statusCode,
+    ).toBe(400);
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: KEY,
+      payload: { agentId: "research-agent", toolId: "send_email", arguments: { to: "external@example.com", attachment: "customers.csv" }, context: {} },
+    });
+    const review = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: KEY,
+      payload: { agentId: "deploy-agent", toolId: "refund", arguments: { amount: 500 }, context: {} },
+    });
+    const reviewId = review.json().decisionId as string;
+    await app.inject({ method: "POST", url: `/v1/approvals/${reviewId}/approve`, headers: ADMIN });
+
+    const purge = await app.inject({ method: "DELETE", url: "/v1/decisions?before=2099-01-01", headers: ADMIN });
+    expect(purge.json()).toMatchObject({ deleted: 1, skippedApprovals: 1, actionsDeleted: 1 });
+
+    const remaining = await app.inject({ method: "GET", url: "/v1/decisions" });
+    expect(remaining.json().length).toBe(1);
+
+    const full = await app.inject({
+      method: "DELETE",
+      url: "/v1/decisions?before=2099-01-01&includeApprovals=true",
+      headers: ADMIN,
+    });
+    expect(full.json()).toMatchObject({ deleted: 1, skippedApprovals: 0 });
+  });
+
   it("replays a stored action and dry-runs a candidate policy", async () => {
     const app = buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };
