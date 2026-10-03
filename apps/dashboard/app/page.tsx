@@ -31,15 +31,22 @@ async function getJSON<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
-function hourlyBuckets(decisions: Decision[]) {
+const RANGES = [
+  { id: "24h", label: "24h", windowMs: 24 * 3_600_000 },
+  { id: "7d", label: "7d", windowMs: 7 * 24 * 3_600_000 },
+  { id: "all", label: "All", windowMs: Number.POSITIVE_INFINITY },
+] as const;
+
+function bucketed(decisions: Decision[], windowMs: number) {
   const now = Date.now();
-  const allow = new Array(24).fill(0);
-  const review = new Array(24).fill(0);
-  const block = new Array(24).fill(0);
+  const N = 24;
+  const allow = new Array(N).fill(0);
+  const review = new Array(N).fill(0);
+  const block = new Array(N).fill(0);
   for (const d of decisions) {
-    const h = Math.floor((now - new Date(d.createdAt).getTime()) / 3_600_000);
-    if (h < 0 || h >= 24) continue;
-    const i = 23 - h;
+    const age = now - new Date(d.createdAt).getTime();
+    if (age < 0 || age >= windowMs) continue;
+    const i = Number.isFinite(windowMs) ? N - 1 - Math.floor((age / windowMs) * N) : N - 1;
     if (d.outcome === "allow") allow[i] += 1;
     else if (d.outcome === "review") review[i] += 1;
     else if (d.outcome === "block") block[i] += 1;
@@ -56,12 +63,14 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-export default async function Overview() {
+export default async function Overview({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+  const { range } = await searchParams;
+  const active = RANGES.find((r) => r.id === range) ?? RANGES[0];
   const [metrics, decisions] = await Promise.all([
     getJSON<Metrics>("/v1/metrics", { decisions_total: 0, allow_total: 0, review_total: 0, block_total: 0, pending_total: 0 }),
     getJSON<Decision[]>("/v1/decisions?limit=500", []),
   ]);
-  const buckets = hourlyBuckets(decisions);
+  const buckets = bucketed(decisions, active.windowMs);
   const recent = decisions.slice(0, 8);
   const cards = [
     { label: "Decisions", value: metrics.decisions_total, stroke: "#111111", spark: buckets.allow.map((v, i) => v + buckets.review[i] + buckets.block[i]) },
@@ -92,8 +101,30 @@ export default async function Overview() {
             ))}
           </div>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <Card title="Decisions over time" subtitle="Last 24 hours, by outcome" className="xl:col-span-2">
-              <AreaChart series={buckets} />
+            <Card
+              title="Decisions over time"
+              subtitle={active.id === "all" ? "All recorded decisions, by outcome" : `Last ${active.label}, by outcome`}
+              className="xl:col-span-2"
+              action={
+                <div className="flex gap-1" role="group" aria-label="Time range">
+                  {RANGES.map((r) => (
+                    <Link
+                      key={r.id}
+                      href={r.id === "24h" ? "/" : `/?range=${r.id}`}
+                      aria-current={r.id === active.id ? "true" : undefined}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                        r.id === active.id
+                          ? "bg-neutral-900 text-white"
+                          : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                      }`}
+                    >
+                      {r.label}
+                    </Link>
+                  ))}
+                </div>
+              }
+            >
+              <AreaChart series={buckets} label={`Decisions over ${active.id === "all" ? "all time" : `the last ${active.label}`}`} />
               <div className="mt-2 flex gap-4 text-xs text-neutral-500">
                 <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-[#15803d]" />Allow</span>
                 <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-[#b45309]" />Review</span>

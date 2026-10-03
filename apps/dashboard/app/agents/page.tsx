@@ -1,4 +1,5 @@
 import { Card, PageHeader, EmptyState } from "../components/ui";
+import CreateAgentForm from "./create-form";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
@@ -17,7 +18,7 @@ type Agent = { id: string; name: string; status: string; description?: string };
 export default async function AgentsPage() {
   const agents = await getJSON<Agent>("/v1/agents");
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       <PageHeader title="Agents" subtitle="Registered agents and their standing." />
       {agents.length === 0 ? (
         <EmptyState title="No agents registered." />
@@ -47,6 +48,7 @@ export default async function AgentsPage() {
           </div>
         </Card>
       )}
+      <CreateAgentForm />
     </div>
   );
 }

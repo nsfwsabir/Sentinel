@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, StatusPill } from "../../components/ui";
+import ApprovalButtons from "./approval-buttons";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
@@ -16,6 +17,7 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
   }
   const d = (await r.json()) as {
     id: string; outcome: string; reason: string; confidence: number;
+    approvalStatus?: string;
     policyIds: string[]; judgments: { question: string; answer: unknown; confidence?: number }[];
     action?: { toolId: string; agentId: string; arguments: unknown };
   };
@@ -64,9 +66,12 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
         </table>
       </Card>
       <Card title="Final decision">
-        <div className="flex items-center gap-3">
-          <StatusPill value={d.outcome} />
-          <p className="text-sm text-neutral-600">{d.reason}</p>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <StatusPill value={d.outcome} />
+            <p className="text-sm text-neutral-600">{d.reason}</p>
+          </div>
+          {d.outcome === "review" && <ApprovalButtons decisionId={d.id} status={d.approvalStatus} />}
         </div>
       </Card>
     </div>

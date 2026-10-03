@@ -12,7 +12,7 @@ export function Sparkline({ values, stroke }: { values: number[]; stroke: string
   );
 }
 
-export function AreaChart({ series }: { series: { allow: number[]; review: number[]; block: number[] } }) {
+export function AreaChart({ series, label = "Decisions over time" }: { series: { allow: number[]; review: number[]; block: number[] }; label?: string }) {
   const w = 560;
   const h = 180;
   const pad = 8;
@@ -35,7 +35,7 @@ export function AreaChart({ series }: { series: { allow: number[]; review: numbe
     return { ...l, pts: pts.join(" ") };
   });
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="Decisions over the last 24 hours">
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label={label}>
       {[0.25, 0.5, 0.75].map((f) => (
         <line key={f} x1={pad} x2={w - pad} y1={h * f} y2={h * f} stroke="#e5e7eb" strokeWidth="1" />
       ))}

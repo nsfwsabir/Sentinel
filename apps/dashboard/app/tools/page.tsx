@@ -1,4 +1,5 @@
 import { Card, PageHeader, EmptyState } from "../components/ui";
+import CreateToolForm from "./create-form";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
@@ -15,7 +16,7 @@ async function getTools() {
 export default async function ToolsPage() {
   const tools = await getTools();
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       <PageHeader title="Tools" subtitle="What agents are allowed to invoke, and how risky each is." />
       {tools.length === 0 ? (
         <EmptyState title="No tools registered." />
@@ -43,6 +44,7 @@ export default async function ToolsPage() {
           </div>
         </Card>
       )}
+      <CreateToolForm />
     </div>
   );
 }
