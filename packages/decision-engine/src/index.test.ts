@@ -79,6 +79,38 @@ describe("decision-engine", () => {
     expect(r.fallbackUsed).toBe(true);
   });
 
+  it("ignores sub-threshold human-review signals", async () => {
+    const r = await decide({
+      state: { agent: "a", tool: "query_database", arguments: { q: "select 1" }, policies: [] },
+      deterministic: [],
+      toolRisk: "low",
+      provider: {
+        name: "cautious",
+        judge: async () => [
+          { question: "policy_violation", type: "noul", answer: "no", confidence: 0.9 },
+          { question: "human_review_needed", type: "noul", answer: "yes", confidence: 0.6 },
+        ],
+      },
+    });
+    expect(r.outcome).toBe("allow");
+  });
+
+  it("honors above-threshold human-review signals", async () => {
+    const r = await decide({
+      state: { agent: "a", tool: "query_database", arguments: { q: "select 1" }, policies: [] },
+      deterministic: [],
+      toolRisk: "low",
+      provider: {
+        name: "cautious",
+        judge: async () => [
+          { question: "policy_violation", type: "noul", answer: "no", confidence: 0.9 },
+          { question: "human_review_needed", type: "noul", answer: "yes", confidence: 0.92 },
+        ],
+      },
+    });
+    expect(r.outcome).toBe("review");
+  });
+
   it("never auto-allows on provider outage for critical tools", async () => {
     const r = await decide({
       state: { agent: "a", tool: "delete_database", arguments: {}, policies: [] },

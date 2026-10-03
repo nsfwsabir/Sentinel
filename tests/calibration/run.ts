@@ -109,6 +109,25 @@ for (const r of rows) {
 }
 const hits = rows.filter((r) => r.match).length;
 console.log(`\ndecision accuracy: ${hits}/${rows.length}`);
+// Threshold sweep for human_review_needed using RECORDED judgments (no re-calls):
+// at each cutoff t, how many expected-allow cases would still review (noise)
+// vs expected-review/block cases still caught. Guides DECISION_REVIEW_BELOW
+// and the hYes floor without burning provider calls.
+console.log("\nhYes cutoff sweep (recorded judgments):");
+console.log("cutoff | allow->review (noise) | review/block still review (caught)");
+for (const t of [0.5, 0.6, 0.7, 0.8, 0.9]) {
+  const noisy = rows.filter(
+    (r) =>
+      r.expected === "allow" &&
+      r.judgments.some((j) => j.question === "human_review_needed" && String(j.answer).toLowerCase() === "yes" && (j.confidence ?? 0) >= t),
+  ).length;
+  const caught = rows.filter(
+    (r) =>
+      r.expected !== "allow" &&
+      r.judgments.some((j) => j.question === "human_review_needed" && String(j.answer).toLowerCase() === "yes" && (j.confidence ?? 0) >= t),
+  ).length;
+  console.log(`${t.toFixed(1)}    | ${noisy} | ${caught}`);
+}
 for (const q of qids) {
   const parts: string[] = [];
   for (const cls of ["allow", "review", "block"]) {

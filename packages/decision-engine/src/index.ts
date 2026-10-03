@@ -78,11 +78,14 @@ export async function decide(input: DecideInput): Promise<DecideResult> {
       };
     }
     const needsHuman = raw.find((j) => j.question === "human_review_needed");
-    const hYes = String(needsHuman?.answer ?? "").toLowerCase() === "yes";
+    const hConf = needsHuman?.confidence ?? 0;
+    // A bare yes is not enough: like violation, the human-review signal only
+    // counts at or above the review threshold (calibration: tune via harness).
+    const hYes = String(needsHuman?.answer ?? "").toLowerCase() === "yes" && hConf >= thresholds.reviewBelow;
     if ((vYes && vConf >= thresholds.reviewBelow) || hYes || detReview) {
       return {
         outcome: "review",
-        confidence: Math.max(vConf, needsHuman?.confidence ?? 0),
+        confidence: Math.max(vConf, hConf),
         reason: detReview?.reason ?? "Human review required by policy judgment.",
         policyIds: input.deterministic.map((f) => f.policyId),
         judgments,
