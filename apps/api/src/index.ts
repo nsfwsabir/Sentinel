@@ -14,14 +14,19 @@ if (problems.length > 0) {
 
 // Postgres is the shared source of truth when DATABASE_URL is set
 // (multi-instance safe); otherwise a hermetic memory store.
+// A configured-but-unreachable database is a hard boot failure: silently
+// serving from memory would split-brain instances with no alarm.
 let store: Store = createMemoryStore();
 if (process.env.DATABASE_URL) {
+  const { createPgStore } = await import("@sentinel/db");
+  const pg = createPgStore();
   try {
-    const { createPgStore } = await import("@sentinel/db");
-    store = createPgStore();
+    await pg.listAgents();
+    store = pg;
     console.log("sentinel using postgres store");
   } catch (err) {
-    console.warn(`sentinel PG store unavailable, using memory: ${err instanceof Error ? err.message : err}`);
+    console.error(`sentinel refusing boot: DATABASE_URL unreachable: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
   }
 }
 

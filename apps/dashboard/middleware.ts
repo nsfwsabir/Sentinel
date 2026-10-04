@@ -2,6 +2,16 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { isOidcConfigured } from "./auth";
 
+// Warn-only here (not a boot refusal): `next build` also runs as
+// production and CI builds carry no secrets. The API hard-refuses
+// dev defaults; the dashboard never holds keys itself.
+if (
+  process.env.NODE_ENV === "production" &&
+  (process.env.SENTINEL_AGENT_KEY ?? "dev-key-1") === "dev-key-1"
+) {
+  console.error("sentinel dashboard: SENTINEL_AGENT_KEY is still the dev default");
+}
+
 // Route protection: when OIDC is configured, mutating routes require a
 // signed-in session; otherwise the legacy basic-auth gate applies
 // (dev mode). Edge-safe: no node: imports. API-level approval auth

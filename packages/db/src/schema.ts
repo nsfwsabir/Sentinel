@@ -83,3 +83,13 @@ export const policyVersions = pgTable("policy_versions", {
   enabled: boolean("enabled").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+export const signals = pgTable("signals", {
+  id: text("id").primaryKey(),
+  source: text("source").notNull(),
+  rule: text("rule").notNull(),
+  priority: text("priority").notNull(),
+  summary: text("summary").notNull(),
+  fields: jsonb("fields").notNull().default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});

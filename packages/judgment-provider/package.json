@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@sentinel/policy-engine": "workspace:*",
     "@sentinel/schemas": "workspace:*",
     "zod": "^3.23.8"
   },

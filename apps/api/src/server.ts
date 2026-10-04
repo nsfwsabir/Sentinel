@@ -448,18 +448,6 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
 
   // External detection signals (Falco alerts, etc.) are evidence only:
   // stored, listed, and shown in the dashboard. They never auto-decide.
-  type Signal = {
-    id: string;
-    source: string;
-    rule: string;
-    priority: string;
-    summary: string;
-    fields: Record<string, unknown>;
-    createdAt: Date;
-  };
-  const signals: Signal[] = [];
-  const SIGNAL_CAP = 500;
-
   app.post("/v1/signals/:source", async (req, reply) => {
     await authenticateAgent(req.headers, withRegistry);
     if (!(await checkIpLimit(req, reply, "signals", Number(process.env.RATE_LIMIT_PER_MIN ?? 120)))) return;
@@ -476,7 +464,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
       body.output_fields && typeof body.output_fields === "object"
         ? (body.output_fields as Record<string, unknown>)
         : {};
-    const signal: Signal = {
+    const signal = {
       id: `sig_${randomUUID().slice(0, 8)}`,
       source,
       rule,
@@ -485,15 +473,13 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
       fields,
       createdAt: new Date(),
     };
-    signals.unshift(signal);
-    if (signals.length > SIGNAL_CAP) signals.length = SIGNAL_CAP;
+    await store.saveSignal(signal);
     childLogger({ decision: `signal:${source}:${rule}` }).info("signal");
     return reply.code(201).send(signal);
   });
   app.get("/v1/signals", async (req) => {
     const q = req.query as { source?: string; limit?: string };
-    const limit = Math.min(Number(q.limit ?? 100) || 100, SIGNAL_CAP);
-    return signals.filter((s) => !q.source || s.source === q.source).slice(0, limit);
+    return store.listSignals(q.source, Math.min(Number(q.limit ?? 100) || 100, 500));
   });
 
   // Retention (TRD §10): purge decisions created before a cutoff.

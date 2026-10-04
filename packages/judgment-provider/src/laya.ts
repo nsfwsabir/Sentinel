@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Judgment } from "@sentinel/schemas";
+import { redactSecrets } from "@sentinel/policy-engine";
 import type { EvalState, FocusedQuestion, JudgmentProvider } from "./index.js";
 
 // Laya /v1/systemone wire shape (laya.studio/docs, Jev-wire-compatible).
@@ -62,6 +63,11 @@ export class LayaJudgmentProvider implements JudgmentProvider {
   }
 
   async judge(state: EvalState): Promise<Omit<Judgment, "id" | "decisionId">[]> {
+    // Data minimization: secrets never leave for a third party. Credential
+    // keys/values are redacted; customer-data shape passes through so
+    // exposure questions keep their signal (credential-exfil itself is
+    // decided deterministically, never by Laya).
+    const redactedArgs = redactSecrets(state.arguments);
     const questions: Record<string, { type: "noul"; instructions: string }> = {};
     for (const [qid, instructions] of Object.entries(QUESTIONS)) {
       questions[qid] = { type: "noul", instructions };
@@ -71,7 +77,7 @@ export class LayaJudgmentProvider implements JudgmentProvider {
         agent: state.agent,
         task: state.task ?? null,
         tool: state.tool,
-        arguments: state.arguments,
+        arguments: redactedArgs,
         policies: state.policies,
         environment: state.environment ?? null,
       },

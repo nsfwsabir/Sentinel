@@ -8,8 +8,8 @@ import type {
   DecisionFilter,
   ApiKey,
   PolicyVersion,
+  Signal,
 } from "@sentinel/schemas";
-
 // In-memory Store: hermetic default for tests and zero-dependency dev.
 // Postgres (@sentinel/db PgStore) implements the same interface for
 // multi-instance deployments.
@@ -21,6 +21,8 @@ export function createMemoryStore(): Store {
   const decisions = new Map<string, StoredDecision>();
   const apiKeys = new Map<string, ApiKey>();
   const policyVersions = new Map<string, PolicyVersion[]>();
+  const signals = new Map<string, Signal>();
+  const SIGNAL_CAP = 500;
 
   const assertLimit = (limit: number) => Math.min(Math.max(limit, 0), 5000);
 
@@ -126,6 +128,19 @@ export function createMemoryStore(): Store {
     async listPolicyVersions(policyId) {
       return [...(policyVersions.get(policyId) ?? [])].sort((a, b) => b.version - a.version);
     },
+    async saveSignal(signal: Signal) {
+      signals.set(signal.id, signal);
+      if (signals.size > SIGNAL_CAP) {
+        const oldest = [...signals.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+        if (oldest) signals.delete(oldest.id);
+      }
+    },
+    async listSignals(source?: string, limit?: number) {
+      const all = [...signals.values()]
+        .filter((s) => !source || s.source === source)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      return all.slice(0, Math.min(Number(limit ?? 100) || 100, SIGNAL_CAP));
+    },
     async metrics() {      const all = [...decisions.values()];
       const count = (f: (d: StoredDecision) => boolean) => all.filter(f).length;
       return {
@@ -158,7 +173,14 @@ export function createMemoryStore(): Store {
       for (const actionId of new Set(removedActionIds)) {
         if (!referenced.has(actionId) && actions.delete(actionId)) actionsDeleted += 1;
       }
-      return { deleted, skippedApprovals, actionsDeleted };
+      let signalsDeleted = 0;
+      for (const s of [...signals.values()]) {
+        if (s.createdAt < before) {
+          signals.delete(s.id);
+          signalsDeleted += 1;
+        }
+      }
+      return { deleted, skippedApprovals, actionsDeleted, signalsDeleted };
     },
   };
 }

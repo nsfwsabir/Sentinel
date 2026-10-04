@@ -1,3 +1,5 @@
+import { originMismatch, originDenied } from "../_lib";
+
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 const ADMIN = "Basic " + Buffer.from(`${process.env.ADMIN_USER ?? "admin"}:${process.env.ADMIN_PASS ?? "admin"}`).toString("base64");
 
@@ -8,7 +10,8 @@ export async function GET() {
 }
 
 // Test connection. Admin creds stay server-side; the API key never leaves it.
-export async function POST() {
+export async function POST(req: Request) {
+  if (originMismatch(req)) return originDenied();
   const r = await fetch(`${API}/v1/provider/test`, {
     method: "POST",
     headers: { authorization: ADMIN },

@@ -1,4 +1,7 @@
+import { originMismatch, originDenied } from "../_lib";
+
 export async function POST(req: Request) {
+  if (originMismatch(req)) return originDenied();
   const api = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
   const body = await req.json();
   // Server-side only: agent key never exposed toyx browser bundle beyond this route.

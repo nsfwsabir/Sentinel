@@ -33,6 +33,7 @@ export type PurgeResult = {
   deleted: number;
   skippedApprovals: number;
   actionsDeleted: number;
+  signalsDeleted: number;
 };
 
 // Immutable snapshot of a policy at a version. Append-only: edits and
@@ -45,6 +46,17 @@ export type PolicyVersion = {
   severity: string;
   mode: string;
   enabled: boolean;
+  createdAt: Date;
+};
+
+// Detection evidence (Falco alerts, …). Stored for audit, never auto-decides.
+export type Signal = {
+  id: string;
+  source: string;
+  rule: string;
+  priority: string;
+  summary: string;
+  fields: Record<string, unknown>;
   createdAt: Date;
 };
 
@@ -95,6 +107,9 @@ export interface Store {
   saveApiKey(key: ApiKey): Promise<void>;
   findApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
   deleteApiKey(id: string): Promise<boolean>;
+  // Signals
+  saveSignal(signal: Signal): Promise<void>;
+  listSignals(source?: string, limit?: number): Promise<Signal[]>;
   // Policy history
   savePolicyVersion(v: PolicyVersion): Promise<void>;
   listPolicyVersions(policyId: string): Promise<PolicyVersion[]>;

@@ -119,4 +119,29 @@ describe("laya provider", () => {
     await expect(provider.judge(state)).rejects.toThrow(/HTTP 500/);
     expect(calls).toBe(2);
   });
+
+  it("redacts secrets from the outbound Laya request body", async () => {
+    let sent = "";
+    const answers: Record<string, unknown> = {};
+    for (const qid of QIDS) {
+      answers[qid] = { type: "noul", noul: 0.1, confidence: 0.9 };
+    }
+    const provider = new LayaJudgmentProvider({
+      apiUrl: "http://laya",
+      apiKey: "k",
+      fetchImpl: (async (_url: string, init?: { body?: unknown }) => {
+        sent = String(init?.body ?? "");
+        return new Response(JSON.stringify({ answers }), { status: 200 });
+      }) as typeof fetch,
+    });
+    await provider.judge({
+      ...state,
+      arguments: { to: "external@example.com", api_key: "sk-live-abcdefgh12345678", attachment: "customers.csv" },
+    });
+    expect(sent).not.toContain("sk-live");
+    expect(sent).toContain("[REDACTED]");
+    // customer-data shape passes through so exposure questions keep signal
+    expect(sent).toContain("customers.csv");
+    expect(sent).toContain("external@example.com");
+  });
 });

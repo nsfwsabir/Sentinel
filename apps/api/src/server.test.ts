@@ -308,6 +308,11 @@ describe("api", () => {
     const list = await app.inject({ method: "GET", url: "/v1/signals?source=falco" });
     expect(list.json().length).toBe(1);
     expect(list.json()[0].rule).toBe("Shell in sentinel-api container");
+
+    const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
+    const purge = await app.inject({ method: "DELETE", url: "/v1/decisions?before=2099-01-01", headers: ADMIN });
+    expect(purge.json().signalsDeleted).toBe(1);
+    expect((await app.inject({ method: "GET", url: "/v1/signals?source=falco" })).json()).toEqual([]);
   });
 
   it("purges old decisions but keeps approvals unless asked", async () => {

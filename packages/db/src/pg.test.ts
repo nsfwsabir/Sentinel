@@ -106,4 +106,18 @@ describe.skipIf(!url)("pg integration", () => {
     expect(await store.deleteApiKey("c_key_1")).toBe(true);
     expect(await store.findApiKeyByHash(hash)).toBeUndefined();
   });
+
+  it("pgstore persists signals and purges them with retention", async () => {
+    process.env.DATABASE_URL = url;
+    const { createPgStore } = await import("./pgstore.js");
+    const store = createPgStore();
+    await store.saveSignal({
+      id: "c_sig_1", source: "falco", rule: "r", priority: "Warning",
+      summary: "r [Warning]", fields: {}, createdAt: new Date(),
+    });
+    expect((await store.listSignals("falco", 10)).length).toBe(1);
+    const r = await store.purgeDecisions(new Date(Date.now() + 1000), { includeApprovals: false, limit: 100 });
+    expect(r.signalsDeleted).toBeGreaterThanOrEqual(1);
+    expect(await store.listSignals("falco", 10)).toEqual([]);
+  });
 });

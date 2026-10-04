@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions, isOidcConfigured } from "../../../auth";
+import { originMismatch, originDenied } from "../_lib";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 const KEY = process.env.SENTINEL_AGENT_KEY ?? "dev-key-1";
@@ -17,6 +18,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  if (originMismatch(req)) return originDenied();
   const denied = await guard();
   if (denied) return denied;
   const body = await req.json();

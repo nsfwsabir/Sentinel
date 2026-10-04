@@ -1,4 +1,4 @@
-import { count, isNull, inArray, eq, lt, and } from "drizzle-orm";
+import { count, isNull, inArray, eq, lt, and, desc } from "drizzle-orm";
 import { db } from "./client.js";
 import * as s from "./schema.js";
 import type {
@@ -11,6 +11,7 @@ import type {
   DecisionFilter,
   Judgment,
   ApiKey,
+  Signal,
 } from "@sentinel/schemas";
 
 // Postgres Store: the shared source of truth for multi-instance
@@ -52,6 +53,16 @@ export function createPgStore(): Store {
     version: r.version,
     scope: (r.scope === "agent" ? "agent" : "org") as Policy["scope"],
     agentIds: (Array.isArray(r.agentIds) ? r.agentIds : []) as string[],
+  });
+
+  const toSignal = (r: typeof s.signals.$inferSelect): Signal => ({
+    id: r.id,
+    source: r.source,
+    rule: r.rule,
+    priority: r.priority,
+    summary: r.summary,
+    fields: (r.fields ?? {}) as Record<string, unknown>,
+    createdAt: r.createdAt,
   });
 
   const toJudgment = (r: typeof s.judgments.$inferSelect): Judgment => ({
@@ -168,14 +179,15 @@ export function createPgStore(): Store {
       return rows.length > 0;
     },
     async listRecentActions(limit) {
-      // Ascending, like memory (oldest of the last N first).
-      const rows = await d().select().from(s.actions).orderBy(s.actions.createdAt).limit(Math.min(Math.max(limit, 0), 5000));
-      return rows.slice(-Math.min(Math.max(limit, 0), 5000)).map(toAction);
+      // Last N ascending, like memory: newest N, oldest first.
+      const n = Math.min(Math.max(limit, 0), 5000);
+      const rows = await d().select().from(s.actions).orderBy(desc(s.actions.createdAt)).limit(n);
+      return rows.reverse().map(toAction);
     },
     async listActionsByAgent(agentId, limit) {
       // Newest first, like memory.
-      const rows = await d().select().from(s.actions).where(eq(s.actions.agentId, agentId)).orderBy(s.actions.createdAt).limit(Math.min(Math.max(limit, 0), 5000));
-      return rows.reverse().map(toAction);
+      const rows = await d().select().from(s.actions).where(eq(s.actions.agentId, agentId)).orderBy(desc(s.actions.createdAt)).limit(Math.min(Math.max(limit, 0), 5000));
+      return rows.map(toAction);
     },
 
     async getDecision(id) {
@@ -225,10 +237,10 @@ export function createPgStore(): Store {
       if (actionIds) conds.push(inArray(s.decisions.actionId, actionIds));
       const limit = Math.min(Number(filter.limit ?? 100) || 100, 500);
       const rows = conds.length > 0
-        ? await d().select().from(s.decisions).where(and(...conds)).orderBy(s.decisions.createdAt).limit(limit)
-        : await d().select().from(s.decisions).orderBy(s.decisions.createdAt).limit(limit);
+        ? await d().select().from(s.decisions).where(and(...conds)).orderBy(desc(s.decisions.createdAt)).limit(limit)
+        : await d().select().from(s.decisions).orderBy(desc(s.decisions.createdAt)).limit(limit);
       const jm = await judgmentsFor(rows.map((r) => r.id));
-      return rows.reverse().map((r) => toDecision(r, jm.get(r.id) ?? []));
+      return rows.map((r) => toDecision(r, jm.get(r.id) ?? []));
     },
     async listReviewDecisions() {
       const rows = await d().select().from(s.decisions).where(eq(s.decisions.outcome, "review")).orderBy(s.decisions.createdAt);
@@ -262,7 +274,27 @@ export function createPgStore(): Store {
         const gone = await d().delete(s.actions).where(eq(s.actions.id, actionId)).returning({ id: s.actions.id });
         if (gone.length > 0) actionsDeleted += 1;
       }
-      return { deleted, skippedApprovals, actionsDeleted };
+      const oldSignals = await d().delete(s.signals).where(lt(s.signals.createdAt, before)).returning({ id: s.signals.id });
+      return { deleted, skippedApprovals, actionsDeleted, signalsDeleted: oldSignals.length };
+    },
+    async saveSignal(signal) {
+      await d().insert(s.signals).values({
+        id: signal.id,
+        source: signal.source,
+        rule: signal.rule,
+        priority: signal.priority,
+        summary: signal.summary,
+        fields: signal.fields,
+        createdAt: signal.createdAt,
+      }).onConflictDoNothing();
+    },
+    async listSignals(source?: string, limit?: number) {
+      // Newest first, like memory.
+      const cap = Math.min(Number(limit ?? 100) || 100, 500);
+      const rows = source
+        ? await d().select().from(s.signals).where(eq(s.signals.source, source)).orderBy(desc(s.signals.createdAt)).limit(cap)
+        : await d().select().from(s.signals).orderBy(desc(s.signals.createdAt)).limit(cap);
+      return rows.map(toSignal);
     },
     async listApiKeys() {
       const rows = await d().select().from(s.apiKeys).orderBy(s.apiKeys.createdAt);
