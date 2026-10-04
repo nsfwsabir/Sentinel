@@ -31,11 +31,11 @@ jobs:
         run: |
           tar -xzf /tmp/b.tar.gz -O /policy.wasm > /tmp/fresh.wasm
           python3 -c "
-import json, tarfile
-t = tarfile.open('/tmp/b.tar.gz')
-m = json.load(t.extractfile('/.manifest'))
-assert m['wasm'][0]['entrypoint'] == 'sentinel/findings', m
-print('manifest entrypoint OK')
+          import json, tarfile
+          t = tarfile.open('/tmp/b.tar.gz')
+          m = json.load(t.extractfile('/.manifest'))
+          assert m['wasm'][0]['entrypoint'] == 'sentinel/findings', m
+          print('manifest entrypoint OK')
 "
           OPA_BUNDLE_PATH=/tmp/fresh.wasm pnpm --filter @sentinel/policy-opa test
       - run: pnpm -r typecheck
