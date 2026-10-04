@@ -30,6 +30,7 @@ const PurgeResultSchema = z.object({
   deleted: z.number(),
   skippedApprovals: z.number(),
   actionsDeleted: z.number(),
+  signalsDeleted: z.number().default(0),
 });
 
 export class SentinelClient {
