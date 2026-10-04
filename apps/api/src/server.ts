@@ -68,6 +68,11 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     findApiKeyByHash: (h) => store.findApiKeyByHash(h),
   };
   const app = Fastify({ logger: false });
+  // Baseline security headers (HSTS/CSP/frame-options/...). JSON API:
+  // nothing browser-rendered, so a tight policy costs nothing.
+  await app.register(import("@fastify/helmet"), {
+    contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+  });
   const provider = providerFromEnv();
 
   app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {

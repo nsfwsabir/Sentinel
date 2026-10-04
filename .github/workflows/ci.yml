@@ -24,5 +24,19 @@ jobs:
       # exists after a topological build. Typecheck/test on a clean
       # checkout fail without it (TS2307).
       - run: pnpm -r build
+      - name: OPA bundle provenance
+        # The committed WASM must behave identically to a fresh build from
+        # the committed Rego (wasm bytes embed build metadata, so compare
+        # behavior + manifest entrypoint, not bytes).
+        run: |
+          tar -xzf /tmp/b.tar.gz -O /policy.wasm > /tmp/fresh.wasm
+          python3 -c "
+import json, tarfile
+t = tarfile.open('/tmp/b.tar.gz')
+m = json.load(t.extractfile('/.manifest'))
+assert m['wasm'][0]['entrypoint'] == 'sentinel/findings', m
+print('manifest entrypoint OK')
+"
+          OPA_BUNDLE_PATH=/tmp/fresh.wasm pnpm --filter @sentinel/policy-opa test
       - run: pnpm -r typecheck
       - run: pnpm -r test
