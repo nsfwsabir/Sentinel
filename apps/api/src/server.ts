@@ -8,11 +8,23 @@ import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@s
 import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
 import { authenticateAgent, agentAuthFromEnv, seedEnvKeys, generateApiKey, hashApiKey, type AgentAuthOptions } from "./agentAuth.js";
 import { childLogger } from "@sentinel/logger";
+import { z } from "zod";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 
-async function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }) {
-  // Production: ADMIN_PASS_HASH (scrypt). Dev fallback: ADMIN_PASS plaintext.
+/** Crash production boot on dev secrets. Pure env check, unit-tested. */
+export function productionSecretProblems(env: Record<string, string | undefined> = process.env): string[] {
+  if (env.NODE_ENV !== "production") return [];
+  const problems: string[] = [];
+  const agentKeys = (env.AGENT_API_KEYS ?? "dev-key-1").split(",").map((s) => s.trim());
+  if (agentKeys.includes("dev-key-1")) problems.push("AGENT_API_KEYS contains dev-key-1");
+  if (!env.ADMIN_PASS_HASH && (env.ADMIN_PASS ?? "admin") === "admin") {
+    problems.push("set ADMIN_PASS_HASH (ADMIN_PASS=admin is dev-only)");
+  }
+  return problems;
+}
+
+async function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }) {  // Production: ADMIN_PASS_HASH (scrypt). Dev fallback: ADMIN_PASS plaintext.
   // Real enforcement lives here (node:crypto); the dashboard middleware gate is defense-in-depth only.
   const creds = parseBasicAuth(req.headers["authorization"]);
   if (!creds || !(await verifyAdminCredentials(creds.user, creds.password))) {
@@ -21,6 +33,30 @@ async function requireAdmin(req: { headers: Record<string, string | string[] | u
     throw err;
   }
 }
+
+// Per-IP throttle for expensive or brute-forceable routes (replay burns
+// Laya credits, dry-run loops, admin paths face credential stuffing).
+// Returns false + replies 429 when over limit. Fail-open like evaluate.
+async function checkIpLimit(
+  req: { ip: string },
+  reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+  name: string,
+  perMin: number,
+): Promise<boolean> {
+  try {
+    const { checkLimit } = await import("@sentinel/db");
+    const { allowed } = await checkLimit(`ip:${name}:${req.ip}`, perMin);
+    if (!allowed) {
+      reply.code(429).send({ error: "rate limited" });
+      return false;
+    }
+  } catch {
+    // limiter unavailable — continue
+  }
+  return true;
+}
+
+const adminLimit = () => Number(process.env.RATE_LIMIT_ADMIN_PER_MIN ?? 30);
 
 export async function buildServer(store: Store = createMemoryStore(), opts?: { agentAuth?: AgentAuthOptions }): Promise<FastifyInstance> {
   await seedStore(store);
@@ -34,8 +70,17 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   const app = Fastify({ logger: false });
   const provider = providerFromEnv();
 
-  app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
+  app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
     const status = err.statusCode ?? 500;
+    if (err instanceof z.ZodError || status === 400) {
+      return reply.code(400).send({ error: "invalid request" });
+    }
+    if (status >= 500) {
+      // Never leak internals (PG/Drizzle/fetch details) to callers;
+      // full error goes to the server log only.
+      childLogger({ request_id: req.id }).error({ err: String(err?.stack ?? err) }, "internal error");
+      return reply.code(status).send({ error: "internal error" });
+    }
     reply.code(status).send({ error: err.message });
   });
 
@@ -91,6 +136,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   // Links the new decision to the SAME action for before/after comparison.
   app.post("/v1/actions/:id/replay", async (req, reply) => {
     await authenticateAgent(req.headers, withRegistry);
+    if (!(await checkIpLimit(req, reply, "replay", Number(process.env.RATE_LIMIT_PER_MIN ?? 120)))) return;
     const { id } = req.params as { id: string };
     const stored = await store.getAction(id);
     if (!stored) return reply.code(404).send({ error: "unknown action" });
@@ -118,6 +164,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   // candidate policy would have treated stored actions.
   app.post("/v1/policies/dry-run", async (req, reply) => {
     await authenticateAgent(req.headers, withRegistry);
+    if (!(await checkIpLimit(req, reply, "dryrun", adminLimit()))) return;
     const candidate = PolicySchema.parse(req.body);
     const q = (req.query ?? {}) as { limit?: string };
     const limit = Math.min(Number(q.limit ?? 200) || 200, 1000);
@@ -250,6 +297,8 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   });
   app.get("/v1/approvals", async () => store.listReviewDecisions());
   const setApproval = (status: "approved" | "rejected") => async (req: unknown, reply: unknown) => {
+    const fastifyReq = req as { headers: Record<string, string | string[] | undefined>; ip: string };
+    if (!(await checkIpLimit(fastifyReq, reply as never, "approvals", adminLimit()))) return;
     // Approvals accept admin basic auth OR an OIDC token carrying the
     // sentinel:approvers scope. Static agent keys are never enough here.
     const headers = (req as { headers: Record<string, string | string[] | undefined> }).headers;
@@ -289,6 +338,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return store.listApiKeys();
   });
   app.post("/v1/api-keys", async (req, reply) => {
+    if (!(await checkIpLimit(req, reply, "apikeys", adminLimit()))) return;
     await requireAdmin(req);
     const body = (req.body ?? {}) as { label?: unknown; boundAgentId?: unknown };
     if (typeof body.label !== "string" || body.label.length === 0) {
@@ -311,6 +361,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return reply.code(201).send({ ...meta, token });
   });
   app.post("/v1/api-keys/:id/rotate", async (req, reply) => {
+    if (!(await checkIpLimit(req, reply, "apikeys", adminLimit()))) return;
     await requireAdmin(req);
     const { id } = req.params as { id: string };
     const cur = (await store.listApiKeys()).find((k) => k.id === id);
@@ -328,6 +379,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     return { ...cur, token };
   });
   app.delete("/v1/api-keys/:id", async (req, reply) => {
+    if (!(await checkIpLimit(req, reply, "apikeys", adminLimit()))) return;
     await requireAdmin(req);
     const { id } = req.params as { id: string };
     if (!(await store.deleteApiKey(id))) return reply.code(404).send({ error: "not found" });
@@ -410,6 +462,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
 
   app.post("/v1/signals/:source", async (req, reply) => {
     await authenticateAgent(req.headers, withRegistry);
+    if (!(await checkIpLimit(req, reply, "signals", Number(process.env.RATE_LIMIT_PER_MIN ?? 120)))) return;
     const { source } = req.params as { source: string };
     if (source !== "falco") return reply.code(404).send({ error: "unknown signal source" });
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -448,6 +501,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
   // unless includeApprovals=true. Orphaned actions are removed with their
   // last referencing decision. PG mirror follows best-effort.
   app.delete("/v1/decisions", async (req, reply) => {
+    if (!(await checkIpLimit(req, reply, "purge", adminLimit()))) return;
     await requireAdmin(req);
     const q = req.query as { before?: string; includeApprovals?: string; limit?: string };
     if (!q.before) return reply.code(400).send({ error: "before (ISO date) is required" });
@@ -476,6 +530,7 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
     }
   });
   app.post("/v1/provider/test", async (req, reply) => {
+    if (!(await checkIpLimit(req as never, reply as never, "providertest", adminLimit()))) return;
     await requireAdmin(req as never);
     const started = Date.now();
     const base = { provider: provider.name } as { provider: string; latencyMs: number } & Record<string, unknown>;

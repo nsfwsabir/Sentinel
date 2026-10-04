@@ -1,8 +1,16 @@
-import { buildServer } from "./server.js";
+import { buildServer, productionSecretProblems } from "./server.js";
 import { createMemoryStore } from "./store.js";
 import type { Store } from "@sentinel/schemas";
 
 const port = Number(process.env.PORT ?? 3001);
+
+// Refuse to boot production on dev secrets. Registry/OIDC setups still
+// pass as long as the literal defaults are gone.
+const problems = productionSecretProblems();
+if (problems.length > 0) {
+  console.error(`sentinel refusing production boot: ${problems.join("; ")}`);
+  process.exit(1);
+}
 
 // Postgres is the shared source of truth when DATABASE_URL is set
 // (multi-instance safe); otherwise a hermetic memory store.

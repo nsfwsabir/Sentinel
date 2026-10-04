@@ -88,4 +88,18 @@ describe("a2a gateway", () => {
     });
     expect(capture2.headers).toMatchObject({ "x-api-key": expect.any(String) });
   });
+
+  it("throttles anonymous floods with 429 + Retry-After", async () => {
+    process.env.A2A_RATE_LIMIT_PER_MIN = "2";
+    const app = buildGateway();
+    stubFetch({ decision: "allow", decisionId: "dec_6" });
+    const payload = { jsonrpc: "2.0", id: "1", method: "message/send", params: { message: msg({ action }) } };
+    expect((await app.inject({ method: "POST", url: "/", payload })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: "/", payload })).statusCode).toBe(200);
+    const limited = await app.inject({ method: "POST", url: "/", payload });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers["retry-after"]).toBeDefined();
+    expect(limited.json().error.code).toBe(-32000);
+    delete process.env.A2A_RATE_LIMIT_PER_MIN;
+  });
 });

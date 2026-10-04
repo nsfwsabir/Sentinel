@@ -111,6 +111,13 @@ function decisionTask(
 export function buildGateway(): FastifyInstance {
   const app = Fastify({ logger: false });
 
+  // Per-IP throttle: the gateway is intentionally credential-optional, so
+  // anonymous callers must not be able to burn Laya credits or flood audit.
+  // In-memory fixed window is enough for a stateless gate (Redis lives in
+  // the API, not here); counts reset when the process restarts.
+  const hits = new Map<string, { count: number; resetAt: number }>();
+  const limitPerMin = Number(process.env.A2A_RATE_LIMIT_PER_MIN ?? 30);
+
   app.get("/.well-known/agent-card.json", async (req) => {
     const proto = (req.headers["x-forwarded-proto"] as string) ?? "http";
     const host = req.headers.host ?? "localhost:3002";
@@ -118,6 +125,19 @@ export function buildGateway(): FastifyInstance {
   });
 
   app.post("/", async (req, reply) => {
+    const ip = req.ip;
+    const now = Date.now();
+    const cur = hits.get(ip);
+    if (!cur || cur.resetAt <= now) {
+      hits.set(ip, { count: 1, resetAt: now + 60_000 });
+    } else if (cur.count >= limitPerMin) {
+      return reply
+        .code(429)
+        .header("Retry-After", Math.ceil((cur.resetAt - now) / 1000))
+        .send({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "rate limited" } });
+    } else {
+      cur.count += 1;
+    }
     const parsed = RpcSchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });

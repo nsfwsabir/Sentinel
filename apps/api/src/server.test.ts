@@ -516,4 +516,80 @@ describe("api", () => {
     });
     expect(unscoped.json().decision).toBe("allow");
   });
+
+  it("returns 400 (not schema details) for invalid bodies", async () => {
+    const app = await buildServer(createMemoryStore());
+    const r = await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: { "x-api-key": "dev-key-1" },
+      payload: { toolId: "send_email" },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.json()).toEqual({ error: "invalid request" });
+  });
+
+  it("returns generic messages for 500s", async () => {
+    const store = createMemoryStore();
+    const app = await buildServer(store);
+    store.listPolicies = async () => {
+      throw new Error("pg connection string has password=hunter2 host=db.internal");
+    };
+    const r = await app.inject({ method: "GET", url: "/v1/policies" });
+    expect(r.statusCode).toBe(500);
+    expect(r.json()).toEqual({ error: "internal error" });
+  });
+
+  it("throttles replay and admin attempts", async () => {
+    const saved = process.env.RATE_LIMIT_PER_MIN;
+    const savedAdmin = process.env.RATE_LIMIT_ADMIN_PER_MIN;
+    process.env.RATE_LIMIT_PER_MIN = "1";
+    process.env.RATE_LIMIT_ADMIN_PER_MIN = "1";
+    // Unique source IP: the in-memory limiter is shared across tests, so
+    // this test must not share counters with any other test.
+    const IP = "10.9.9.9";
+    const at = (extra: Record<string, unknown> = {}) => ({ remoteAddress: IP, ...extra });
+    try {
+      const app = await buildServer(createMemoryStore());
+      const KEY = { "x-api-key": "dev-key-1" };
+      // Fresh agent: the in-memory limiter is shared across tests in this
+      // file, so never reuse an agent id here.
+      await app.inject({
+        method: "POST",
+        url: "/v1/agents",
+        headers: KEY,
+        payload: { id: "throttle-probe", name: "Probe", status: "active" },
+      });
+      const created = await app.inject(at({
+        method: "POST",
+        url: "/v1/actions/evaluate",
+        headers: KEY,
+        payload: { agentId: "throttle-probe", toolId: "query_database", arguments: { q: "select 1" }, context: {} },
+      }));
+      expect(created.statusCode).toBe(200);
+      const actionId = (await (await app.inject(at({ method: "GET", url: `/v1/decisions/${created.json().decisionId}` }))).json()).actionId as string;
+      expect((await app.inject(at({ method: "POST", url: `/v1/actions/${actionId}/replay`, headers: KEY }))).statusCode).toBe(200);
+      expect((await app.inject(at({ method: "POST", url: `/v1/actions/${actionId}/replay`, headers: KEY }))).statusCode).toBe(429);
+
+      const bad = { authorization: "Basic " + Buffer.from("admin:wrong").toString("base64") };
+      expect((await app.inject(at({ method: "POST", url: "/v1/provider/test", headers: bad }))).statusCode).toBe(401);
+      expect((await app.inject(at({ method: "POST", url: "/v1/provider/test", headers: bad }))).statusCode).toBe(429);
+    } finally {
+      if (saved === undefined) delete process.env.RATE_LIMIT_PER_MIN;
+      else process.env.RATE_LIMIT_PER_MIN = saved;
+      if (savedAdmin === undefined) delete process.env.RATE_LIMIT_ADMIN_PER_MIN;
+      else process.env.RATE_LIMIT_ADMIN_PER_MIN = savedAdmin;
+    }
+  });
+
+  it("flags dev secrets for production boot", async () => {
+    const { productionSecretProblems } = await import("./server.js");
+    expect(productionSecretProblems({ NODE_ENV: "development" })).toEqual([]);
+    expect(
+      productionSecretProblems({ NODE_ENV: "production", AGENT_API_KEYS: "dev-key-1", ADMIN_PASS: "admin" }).length,
+    ).toBe(2);
+    expect(
+      productionSecretProblems({ NODE_ENV: "production", AGENT_API_KEYS: "real-key", ADMIN_PASS_HASH: "scrypt$a$b" }),
+    ).toEqual([]);
+  });
 });
