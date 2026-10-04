@@ -36,7 +36,7 @@ jobs:
           m = json.load(t.extractfile('/.manifest'))
           assert m['wasm'][0]['entrypoint'] == 'sentinel/findings', m
           print('manifest entrypoint OK')
-"
+          "
           OPA_BUNDLE_PATH=/tmp/fresh.wasm pnpm --filter @sentinel/policy-opa test
       - run: pnpm -r typecheck
       - run: pnpm -r test
