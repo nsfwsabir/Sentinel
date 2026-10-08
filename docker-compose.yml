@@ -69,6 +69,7 @@ services:
     privileged: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
       - ./falco/sentinel-rules.yaml:/etc/falco/rules.d/sentinel-rules.yaml:ro
     environment:
       FALCO_HTTP_OUTPUT_URL: http://api:3001/v1/signals/falco

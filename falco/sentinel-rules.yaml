@@ -3,6 +3,10 @@
 # Sentinel itself (rate limiting, metrics). Alerts ship to Sentinel via the
 # Falco http_output webhook POSTed to /v1/signals/falco and are stored as
 # evidence; they never auto-decide.
+- list: sentinel_allowed_egress_ports
+  # Postgres + Redis (data plane) + 443 (Laya judgments, OIDC discovery).
+  # Compose assigns container IPs dynamically, so match server ports.
+  items: [5432, 6379, 443]
 - rule: Shell in Sentinel container
   desc: Detect shell spawned inside a Sentinel service container
   condition: >
@@ -28,7 +32,7 @@
   condition: >
     outbound and container
     and container.name = "sentinel-api"
-    and not fd.sip in (postgres_servers, redis_servers, laya_endpoints)
+    and not fd.sport in (sentinel_allowed_egress_ports)
   output: "unexpected outbound %fd.sip:%fd.sport from sentinel-api"
   priority: NOTICE
   tags: [sentinel, network, egress]
