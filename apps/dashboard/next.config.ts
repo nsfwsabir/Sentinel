@@ -2,9 +2,10 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   output: "standalone",
-  env: {
-    SENTINEL_API_URL: process.env.SENTINEL_API_URL ?? "http://localhost:3001",
-  },
+  // NOTE: no `env:` block on purpose. next.config `env` is inlined at
+  // build time, which bakes localhost fallbacks into the image and breaks
+  // Docker networking (dashboard must reach http://api:3001 at runtime).
+  // Server code reads process.env.SENTINEL_API_URL per request instead.
   // Clickjacking + MIME-sniffing baseline. script-src allows Next.js
   // inline runtime chunks ('unsafe-inline' scripts only, no eval);
   // connect-src must cover the API + Laya only via server routes, so
