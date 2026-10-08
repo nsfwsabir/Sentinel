@@ -41,7 +41,7 @@ export default function Sidebar() {
       </Link>
       {GROUPS.map((g) => (
         <div key={g.label}>
-          <p className="px-2.5 pb-1 text-[13px] text-neutral-500">{g.label}</p>
+          <p className="px-2.5 pb-1 text-sm font-semibold text-neutral-800">{g.label}</p>
           <div className="flex flex-col gap-px">
             {g.links.map((l) => {
               const isActive = active(l.href, path);
