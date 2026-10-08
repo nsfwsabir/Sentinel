@@ -1,3 +1,4 @@
+import { GENESIS_HASH, hashDecisionContent } from "@sentinel/schemas";
 import type {
   Agent,
   Tool,
@@ -9,6 +10,7 @@ import type {
   ApiKey,
   PolicyVersion,
   Signal,
+  AuditCheckpoint,
 } from "@sentinel/schemas";
 // In-memory Store: hermetic default for tests and zero-dependency dev.
 // Postgres (@sentinel/db PgStore) implements the same interface for
@@ -22,6 +24,7 @@ export function createMemoryStore(): Store {
   const apiKeys = new Map<string, ApiKey>();
   const policyVersions = new Map<string, PolicyVersion[]>();
   const signals = new Map<string, Signal>();
+  const checkpoints = new Map<string, AuditCheckpoint>();
   const SIGNAL_CAP = 500;
 
   const assertLimit = (limit: number) => Math.min(Math.max(limit, 0), 5000);
@@ -86,7 +89,17 @@ export function createMemoryStore(): Store {
       return decisions.get(id);
     },
     async saveDecision(d) {
-      decisions.set(d.id, d);
+      // Append to the hash chain: preserve an existing link on updates
+      // (approvals), otherwise link to the current head.
+      const existing = decisions.get(d.id);
+      const prevHash =
+        existing?.prevHash ??
+        [...decisions.values()]
+          .filter((r) => r.id !== d.id && r.hash)
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+          .at(-1)?.hash ??
+        GENESIS_HASH;
+      decisions.set(d.id, { ...d, prevHash, hash: hashDecisionContent({ ...d, prevHash } as StoredDecision, prevHash) });
     },
     async deleteDecision(id) {
       return decisions.delete(id);
@@ -107,6 +120,17 @@ export function createMemoryStore(): Store {
     },
     async listReviewDecisions() {
       return [...decisions.values()].filter((d) => d.outcome === "review");
+    },
+    async listAllDecisionsAsc() {
+      return [...decisions.values()].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1),
+      );
+    },
+    async saveCheckpoint(c) {
+      checkpoints.set(c.id, c);
+    },
+    async listCheckpoints() {
+      return [...checkpoints.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     },
     async listApiKeys() {
       return [...apiKeys.values()].map(({ keyHash: _h, ...meta }) => meta);
@@ -156,6 +180,7 @@ export function createMemoryStore(): Store {
     async purgeDecisions(before, opts) {      let deleted = 0;
       let skippedApprovals = 0;
       const removedActionIds: string[] = [];
+      const removed: StoredDecision[] = [];
       for (const d of [...decisions.values()]) {
         if (deleted >= opts.limit) break;
         if (d.createdAt >= before) continue;
@@ -165,7 +190,25 @@ export function createMemoryStore(): Store {
         }
         decisions.delete(d.id);
         removedActionIds.push(d.actionId);
+        removed.push(d);
         deleted += 1;
+      }
+      // Checkpoint BEFORE the gap: newest deleted row bridges the chain.
+      if (removed.length > 0) {
+        const head = removed
+          .filter((d) => d.hash)
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+          .at(-1);
+        if (head?.hash) {
+          const checkpointId = `chk_${Date.now().toString(36)}`;
+          checkpoints.set(checkpointId, {
+            id: checkpointId,
+            createdAt: new Date(),
+            headId: head.id,
+            headHash: head.hash,
+            deletedCount: removed.length,
+          });
+        }
       }
       // Replay links several decisions to one action: delete only orphans.
       let actionsDeleted = 0;

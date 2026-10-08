@@ -1,4 +1,5 @@
 import type { Agent, Tool, Policy, Decision, Judgment } from "./index.js";
+import type { AuditCheckpoint } from "./audit.js";
 
 // Shared persistence contract. Memory and Postgres implementations are
 // interchangeable; routes depend only on this interface so any number of
@@ -20,6 +21,8 @@ export type StoredDecision = Decision & {
   confidence: number;
   approvalStatus?: ApprovalStatus;
   fallbackUsed?: boolean;
+  prevHash?: string;
+  hash?: string;
 };
 
 export type DecisionFilter = {
@@ -113,6 +116,10 @@ export interface Store {
   // Policy history
   savePolicyVersion(v: PolicyVersion): Promise<void>;
   listPolicyVersions(policyId: string): Promise<PolicyVersion[]>;
+  // Audit chain
+  listAllDecisionsAsc(): Promise<StoredDecision[]>;
+  saveCheckpoint(c: AuditCheckpoint): Promise<void>;
+  listCheckpoints(): Promise<AuditCheckpoint[]>;
   /** TRD §12 counters, computed over the full store (no list truncation). */
   metrics(): Promise<{
     decisions_total: number;

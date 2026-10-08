@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS judgments (id text primary key, decision_id text not 
 CREATE TABLE IF NOT EXISTS api_keys (id text primary key, label text not null, key_hash text not null unique, bound_agent_id text, created_at timestamptz not null default now());
 CREATE TABLE IF NOT EXISTS policy_versions (policy_id text not null, version integer not null, name text not null, description text not null, severity text not null, mode text not null, enabled boolean not null, created_at timestamptz not null default now(), PRIMARY KEY (policy_id, version));
 CREATE TABLE IF NOT EXISTS signals (id text primary key, source text not null, rule text not null, priority text not null, summary text not null, fields jsonb not null default '{}', created_at timestamptz not null default now());
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS prev_hash text;
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS hash text;
+CREATE TABLE IF NOT EXISTS audit_checkpoints (id text primary key, head_id text not null, head_hash text not null, deleted_count integer not null default 0, created_at timestamptz not null default now());
 -- Jev-era column rename (idempotent; no-op on fresh databases).
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'decisions' AND column_name = 'jev_duration_ms') THEN

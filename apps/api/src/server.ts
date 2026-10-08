@@ -4,7 +4,7 @@ import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
 import { evaluatePolicies } from "@sentinel/policy-opa";
 import { decide, riskScore } from "@sentinel/decision-engine";
 import { providerFromEnv } from "@sentinel/judgment-provider";
-import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema } from "@sentinel/schemas";
+import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema, verifyDecisions } from "@sentinel/schemas";
 import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
 import { authenticateAgent, agentAuthFromEnv, seedEnvKeys, generateApiKey, hashApiKey, type AgentAuthOptions } from "./agentAuth.js";
 import { childLogger } from "@sentinel/logger";
@@ -508,6 +508,15 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
 
   // TRD §12 metrics — computed over the full store, no list truncation.
   app.get("/v1/metrics", async () => store.metrics());
+
+  // Audit integrity: recompute the decision hash chain and report the
+  // first break (if any) plus retention checkpoints (chain restarts).
+  app.get("/v1/audit/verify", async (req, reply) => {
+    if (!(await checkIpLimit(req, reply, "purge", adminLimit()))) return;
+    await requireAdmin(req);
+    const [rows, checkpoints] = await Promise.all([store.listAllDecisionsAsc(), store.listCheckpoints()]);
+    return verifyDecisions(rows, checkpoints);
+  });
 
   // Provider status (public metadata, never secrets) + connection test (admin).
   app.get("/v1/provider/status", async () => {

@@ -1,4 +1,5 @@
-import { count, isNull, inArray, eq, lt, and, desc } from "drizzle-orm";
+import { count, isNull, inArray, eq, lt, and, desc, ne, asc } from "drizzle-orm";
+import { GENESIS_HASH, hashDecisionContent } from "@sentinel/schemas";
 import { db } from "./client.js";
 import * as s from "./schema.js";
 import type {
@@ -12,6 +13,7 @@ import type {
   Judgment,
   ApiKey,
   Signal,
+  AuditCheckpoint,
 } from "@sentinel/schemas";
 
 // Postgres Store: the shared source of truth for multi-instance
@@ -87,6 +89,8 @@ export function createPgStore(): Store {
       ? r.approvalStatus
       : undefined) as StoredDecision["approvalStatus"],
     fallbackUsed: r.fallbackUsed,
+    prevHash: r.prevHash ?? undefined,
+    hash: r.hash ?? undefined,
   });
 
   const judgmentsFor = async (decisionIds: string[]): Promise<Map<string, Judgment[]>> => {
@@ -197,15 +201,25 @@ export function createPgStore(): Store {
       return toDecision(rows[0], jm.get(id) ?? []);
     },
     async saveDecision(dec) {
+      // Append to the hash chain: preserve an existing link on updates
+      // (approvals), otherwise link to the current head (excluding self).
+      const [existing, head] = await Promise.all([
+        d().select({ prevHash: s.decisions.prevHash }).from(s.decisions).where(eq(s.decisions.id, dec.id)),
+        d().select({ hash: s.decisions.hash }).from(s.decisions).where(ne(s.decisions.id, dec.id)).orderBy(desc(s.decisions.createdAt), desc(s.decisions.id)).limit(1),
+      ]);
+      const prevHash = existing[0]?.prevHash ?? head[0]?.hash ?? GENESIS_HASH;
+      const hash = hashDecisionContent({ ...dec, prevHash } as StoredDecision, prevHash);
       await d().insert(s.decisions).values({
         id: dec.id, actionId: dec.actionId, outcome: dec.outcome, confidence: dec.confidence,
         reason: dec.reason, policyIds: dec.policyIds, approvalStatus: dec.approvalStatus ?? null,
         fallbackUsed: dec.fallbackUsed ?? false, evaluationDurationMs: null, createdAt: dec.createdAt,
+        prevHash, hash,
       }).onConflictDoUpdate({
         target: s.decisions.id,
         set: {
           outcome: dec.outcome, confidence: dec.confidence, reason: dec.reason, policyIds: dec.policyIds,
           approvalStatus: dec.approvalStatus ?? null, fallbackUsed: dec.fallbackUsed ?? false,
+          prevHash, hash,
         },
       });
       await d().delete(s.judgments).where(eq(s.judgments.decisionId, dec.id));
@@ -247,14 +261,31 @@ export function createPgStore(): Store {
       const jm = await judgmentsFor(rows.map((r) => r.id));
       return rows.map((r) => toDecision(r, jm.get(r.id) ?? []));
     },
+    async listAllDecisionsAsc() {
+      const rows = await d().select().from(s.decisions).orderBy(asc(s.decisions.createdAt), asc(s.decisions.id));
+      const jm = await judgmentsFor(rows.map((r) => r.id));
+      return rows.map((r) => toDecision(r, jm.get(r.id) ?? []));
+    },
+    async saveCheckpoint(c: AuditCheckpoint) {
+      await d().insert(s.auditCheckpoints).values({
+        id: c.id, headId: c.headId, headHash: c.headHash, deletedCount: c.deletedCount, createdAt: c.createdAt,
+      }).onConflictDoNothing();
+    },
+    async listCheckpoints() {
+      const rows = await d().select().from(s.auditCheckpoints).orderBy(asc(s.auditCheckpoints.createdAt));
+      return rows.map((r) => ({
+        id: r.id, headId: r.headId, headHash: r.headHash, deletedCount: r.deletedCount ?? 0, createdAt: r.createdAt,
+      }));
+    },
     async purgeDecisions(before, opts) {
       const old = await d()
-        .select({ id: s.decisions.id, actionId: s.decisions.actionId, approvalStatus: s.decisions.approvalStatus, createdAt: s.decisions.createdAt })
+        .select({ id: s.decisions.id, actionId: s.decisions.actionId, approvalStatus: s.decisions.approvalStatus, hash: s.decisions.hash, createdAt: s.decisions.createdAt })
         .from(s.decisions)
         .where(lt(s.decisions.createdAt, before));
       let deleted = 0;
       let skippedApprovals = 0;
       const removedActionIds: string[] = [];
+      const removedHashes: { id: string; hash: string | null; createdAt: Date }[] = [];
       for (const r of old) {
         if (deleted >= opts.limit) break;
         if (!opts.includeApprovals && (r.approvalStatus === "approved" || r.approvalStatus === "rejected")) {
@@ -264,7 +295,22 @@ export function createPgStore(): Store {
         await d().delete(s.judgments).where(eq(s.judgments.decisionId, r.id));
         await d().delete(s.decisions).where(eq(s.decisions.id, r.id));
         removedActionIds.push(r.actionId);
+        removedHashes.push({ id: r.id, hash: r.hash, createdAt: r.createdAt });
         deleted += 1;
+      }
+      // Checkpoint BEFORE the gap: newest deleted row bridges the chain.
+      const head = removedHashes
+        .filter((r) => r.hash)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .at(-1);
+      if (head?.hash) {
+        await d().insert(s.auditCheckpoints).values({
+          id: `chk_${Date.now().toString(36)}`,
+          headId: head.id,
+          headHash: head.hash,
+          deletedCount: removedHashes.length,
+          createdAt: new Date(),
+        }).onConflictDoNothing();
       }
       let actionsDeleted = 0;
       const remaining = await d().select({ actionId: s.decisions.actionId }).from(s.decisions);

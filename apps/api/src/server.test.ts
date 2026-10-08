@@ -354,6 +354,20 @@ describe("api", () => {
     expect(full.json()).toMatchObject({ deleted: 1, skippedApprovals: 0 });
   });
 
+  it("verifies the audit hash chain", async () => {
+    const app = await buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
+    expect((await app.inject({ method: "GET", url: "/v1/audit/verify" })).statusCode).toBe(401);
+    await app.inject({
+      method: "POST",
+      url: "/v1/actions/evaluate",
+      headers: KEY,
+      payload: { agentId: "research-agent", toolId: "send_email", arguments: { to: "external@example.com", attachment: "customers.csv" }, context: {} },
+    });
+    expect(await app.inject({ method: "GET", url: "/v1/audit/verify", headers: ADMIN }).then((r) => r.json())).toMatchObject({ ok: true, checked: 1 });
+  });
+
   it("replays a stored action and dry-runs a candidate policy", async () => {
     const app = await buildServer(createMemoryStore());
     const KEY = { "x-api-key": "dev-key-1" };

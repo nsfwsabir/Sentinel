@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, PageHeader, StatusPill, EmptyState } from "./components/ui";
+import { AuditBadge } from "./components/audit-badge";
 import { Sparkline, AreaChart, Donut } from "./components/charts";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
@@ -81,7 +82,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <div>
-      <PageHeader title="Overview" subtitle="Runtime decisions across your agents." />
+      <PageHeader title="Overview" subtitle="Runtime decisions across your agents." action={<AuditBadge />} />
       {decisions.length === 0 ? (
         <EmptyState
           title="No decisions yet."

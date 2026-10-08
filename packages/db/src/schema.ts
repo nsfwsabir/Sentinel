@@ -52,6 +52,8 @@ export const decisions = pgTable("decisions", {
   fallbackUsed: boolean("fallback_used").notNull().default(false),
   evaluationDurationMs: integer("evaluation_duration_ms"),
   providerDurationMs: integer("provider_duration_ms"),
+  prevHash: text("prev_hash"),
+  hash: text("hash"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -91,5 +93,13 @@ export const signals = pgTable("signals", {
   priority: text("priority").notNull(),
   summary: text("summary").notNull(),
   fields: jsonb("fields").notNull().default({}),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const auditCheckpoints = pgTable("audit_checkpoints", {
+  id: text("id").primaryKey(),
+  headId: text("head_id").notNull(),
+  headHash: text("head_hash").notNull(),
+  deletedCount: integer("deleted_count").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
