@@ -1,16 +1,17 @@
 import "./globals.css";
-import { Inter } from "next/font/google";
+import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import Sidebar from "./components/sidebar";
 import Topbar from "./components/topbar";
 
-const inter = Inter({ subsets: ["latin"], display: "swap" });
+const voice = Space_Grotesk({ subsets: ["latin"], display: "swap", variable: "--font-voice" });
+const evidence = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], display: "swap", variable: "--font-evidence" });
 
 export const metadata = { title: "Sentinel", description: "Runtime policy enforcement for AI agents" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.className}>
-      <body className="bg-neutral-50 text-neutral-900 antialiased">
+    <html lang="en" className={`${voice.variable} ${evidence.variable}`}>
+      <body className="bg-paper font-voice text-neutral-800 antialiased">
         <div className="grid min-h-screen grid-cols-[230px_1fr]">
           <Sidebar />
           <div className="flex min-h-screen min-w-0 flex-col">

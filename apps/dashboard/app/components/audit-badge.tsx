@@ -22,7 +22,7 @@ export function AuditBadge() {
   return (
     <span
       title={v.ok ? `bridged checkpoints: ${v.bridged.length}, pre-chain rows: ${v.unchained}` : "hash mismatch — investigate before trusting history"}
-      className={`inline-block rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide ${tone}`}
+      className={`inline-block rounded-[3px] border-2 px-1.5 py-px font-mono text-[11px] font-semibold uppercase tracking-wide ${tone}`}
     >
       {label}
     </span>

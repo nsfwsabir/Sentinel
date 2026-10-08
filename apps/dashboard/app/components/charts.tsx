@@ -1,4 +1,4 @@
-// Zero-dependency SVG charts. Flat fills only (DESIGN.md: no gradients).
+// Zero-dependency SVG charts. Flat fills only, no gradients.
 
 export function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
   const w = 120;
@@ -84,10 +84,20 @@ export function Donut({ allow, review, block }: { allow: number; review: number;
           {allow + review + block}
         </text>
       </svg>
-      <ul className="space-y-2 text-[13px]">
-        <li className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#15803d]" />Allowed · {allow}</li>
-        <li className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#b45309]" />Review · {review}</li>
-        <li className="flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#b91c1c]" />Blocked · {block}</li>
+      <ul className="min-w-36 flex-1 text-[13px]">
+        {[
+          { label: "Allowed", v: allow, color: "#15803d" },
+          { label: "Review", v: review, color: "#b45309" },
+          { label: "Blocked", v: block, color: "#b91c1c" },
+        ].map((r) => (
+          <li key={r.label} className="flex items-baseline justify-between gap-4 border-b border-neutral-100 py-1.5">
+            <span className="flex items-center gap-2 text-neutral-600">
+              <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: r.color }} />
+              {r.label}
+            </span>
+            <span className="font-mono text-xs font-semibold text-ink">{r.v}</span>
+          </li>
+        ))}
       </ul>
     </div>
   );

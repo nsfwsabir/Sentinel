@@ -12,7 +12,7 @@ export default async function Topbar() {
     }
   })();
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-neutral-200 bg-neutral-50/90 px-6 py-3 backdrop-blur lg:px-8">
+    <header className="sticky top-0 z-10 flex items-center gap-4 border-b border-neutral-200 bg-paper/90 px-6 py-3 backdrop-blur lg:px-8">
       <SearchBox />
       <div className="ml-auto flex items-center gap-3">
         <span className="rounded-full border border-neutral-200 bg-white px-2.5 py-0.5 font-mono text-[11px] text-neutral-500">

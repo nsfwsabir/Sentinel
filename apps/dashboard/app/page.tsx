@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Card, PageHeader, StatusPill, EmptyState } from "./components/ui";
 import { AuditBadge } from "./components/audit-badge";
-import { Sparkline, AreaChart, Donut } from "./components/charts";
+import { AreaChart, Donut } from "./components/charts";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
 
@@ -73,35 +73,74 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   ]);
   const buckets = bucketed(decisions, active.windowMs);
   const recent = decisions.slice(0, 8);
-  const cards = [
-    { label: "Decisions", value: metrics.decisions_total, stroke: "#111111", spark: buckets.allow.map((v, i) => v + buckets.review[i] + buckets.block[i]) },
-    { label: "Allowed", value: metrics.allow_total, stroke: "#15803d", spark: buckets.allow },
-    { label: "Review", value: metrics.review_total, stroke: "#b45309", spark: buckets.review },
-    { label: "Blocked", value: metrics.block_total, stroke: "#b91c1c", spark: buckets.block },
-  ];
+  const spine: Record<string, string> = { allow: "bg-allow", review: "bg-review", block: "bg-block" };
+  const docketLine =
+    decisions.length === 0
+      ? "No rulings handed down yet."
+      : `${decisions.length} ${decisions.length === 1 ? "ruling" : "rulings"} on record${
+          metrics.pending_total > 0
+            ? `, ${metrics.pending_total} waiting on a human`
+            : ", queue clear"
+        }.`;
 
   return (
     <div>
-      <PageHeader title="Overview" subtitle="Runtime decisions across your agents." action={<AuditBadge />} />
+      <PageHeader title="Overview" subtitle={docketLine} action={<AuditBadge />} />
       {decisions.length === 0 ? (
         <EmptyState
           title="No decisions yet."
           body="Connect an agent and submit your first action to start evaluating runtime policy."
         />
       ) : (
-        <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            {cards.map((c) => (
-              <div key={c.label} className="rounded-xl border border-neutral-200 bg-white px-5 py-4">
-                <p className="text-[13px] text-neutral-500">{c.label}</p>
-                <div className="mt-1 flex items-end justify-between gap-2">
-                  <p className="text-[28px] font-semibold leading-none text-neutral-900">{c.value}</p>
-                  <Sparkline values={c.spark} stroke={c.stroke} />
-                </div>
+        <div className="flex flex-col gap-6">
+          <dl className="grid grid-cols-1 gap-4 border-y-2 border-ink py-5 sm:grid-cols-3 sm:gap-6">
+            {[
+              { label: "Blocked", value: metrics.block_total, color: "text-block" },
+              { label: "Waiting on a human", value: metrics.pending_total, color: "text-review" },
+              { label: "Allowed", value: metrics.allow_total, color: "text-allow" },
+            ].map((f) => (
+              <div key={f.label}>
+                <dt className="text-sm text-neutral-500">{f.label}</dt>
+                <dd className={`mt-1 font-mono text-[56px] font-semibold leading-none tracking-tight ${f.color}`}>
+                  {f.value}
+                </dd>
               </div>
             ))}
-          </div>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          </dl>
+          {metrics.pending_total > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-ink px-5 py-3.5">
+              <p className="text-sm font-medium text-white">
+                {metrics.pending_total} {metrics.pending_total === 1 ? "decision is" : "decisions are"} waiting for a ruling.
+              </p>
+              <Link href="/approvals" className="rounded-[3px] bg-white px-3 py-1.5 text-[13px] font-bold text-ink">
+                Review the queue
+              </Link>
+            </div>
+          )}
+          <section aria-label="Latest rulings">
+            <div className="flex items-baseline justify-between gap-4 pb-2">
+              <h2 className="text-[15px] font-bold tracking-tight text-ink">Latest rulings</h2>
+              <Link href="/decisions" className="text-[13px] font-medium text-ink underline">View all</Link>
+            </div>
+            <ol className="border-t border-neutral-200">
+              {recent.map((d) => (
+                <li key={d.id} className="flex items-center gap-4 border-b border-neutral-200 py-2.5">
+                  <span className={`w-1 shrink-0 self-stretch ${spine[d.outcome] ?? "bg-neutral-300"}`} aria-hidden="true" />
+                  <span className="w-20 shrink-0 font-mono text-xs text-neutral-500">{timeAgo(d.createdAt)}</span>
+                  <span className="min-w-0 flex-1">
+                    <Link href={`/decisions/${d.id}`} className="font-mono text-xs text-ink underline decoration-neutral-300 underline-offset-2">
+                      {d.id}
+                    </Link>
+                    <span className="block truncate text-[13px] text-neutral-500">
+                      {d.action ? `${d.action.toolId} by ${d.action.agentId}` : d.reason}
+                    </span>
+                  </span>
+                  <StatusPill value={d.outcome} />
+                </li>
+              ))}
+            </ol>
+          </section>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card
               title="Decisions over time"
               subtitle={active.id === "all" ? "All recorded decisions, by outcome" : `Last ${active.label}, by outcome`}
@@ -115,8 +154,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       aria-current={r.id === active.id ? "true" : undefined}
                       className={`rounded-md px-2.5 py-1 text-xs font-medium ${
                         r.id === active.id
-                          ? "bg-neutral-900 text-white"
-                          : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                          ? "bg-ink text-white"
+                          : "text-neutral-500 hover:bg-neutral-100 hover:text-ink"
                       }`}
                     >
                       {r.label}
@@ -134,51 +173,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             </Card>
             <Card title="Decision mix" subtitle="All recorded decisions">
               <Donut allow={metrics.allow_total} review={metrics.review_total} block={metrics.block_total} />
-            </Card>
-          </div>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <Card
-              title="Recent decisions"
-              className="xl:col-span-2"
-              action={<Link href="/decisions" className="text-[13px] font-medium text-neutral-900 underline">View all</Link>}
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[13px]">
-                  <thead>
-                    <tr className="text-left text-neutral-500">
-                      <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Time</th>
-                      <th className="border-b border-neutral-200 py-2 pr-3 font-medium">ID</th>
-                      <th className="border-b border-neutral-200 py-2 font-medium">Decision</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recent.map((d) => (
-                      <tr key={d.id}>
-                        <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs text-neutral-500">{timeAgo(d.createdAt)}</td>
-                        <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">
-                          <Link href={`/decisions/${d.id}`} className="underline decoration-neutral-300 underline-offset-2">{d.id}</Link>
-                        </td>
-                        <td className="border-b border-neutral-100 py-2"><StatusPill value={d.outcome} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-            <Card title="Recent activity" subtitle="Latest evaluations">
-              <ul className="flex flex-col gap-3">
-                {recent.slice(0, 6).map((d) => (
-                  <li key={d.id} className="flex gap-2.5 text-[13px]">
-                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${d.outcome === "allow" ? "bg-[#15803d]" : d.outcome === "review" ? "bg-[#b45309]" : "bg-[#b91c1c]"}`} />
-                    <span className="text-neutral-600">
-                      <span className="font-medium capitalize text-neutral-900">{d.outcome}</span>
-                      {d.action ? ` ${d.action.toolId} by ${d.action.agentId}` : ` ${d.actionId}`}
-                      <br />
-                      <span className="text-xs text-neutral-400">{timeAgo(d.createdAt)}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
             </Card>
           </div>
         </div>

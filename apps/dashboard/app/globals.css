@@ -1,14 +1,35 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-voice: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-evidence: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-paper: #ffffff;
+  --color-folio: #f4f4f1;
+  --color-ink: #0a0a0a;
   --color-allow: #15803d;
   --color-review: #b45309;
   --color-block: #b91c1c;
 }
 
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid #111;
+  outline: 2px solid #0a0a0a;
   outline-offset: 2px;
+}
+
+/* Single orchestrated motion: the queue count answers data changes. */
+@keyframes queue-tick {
+  0% { background-color: #0a0a0a; color: #fff; }
+  100% { background-color: transparent; }
+}
+
+.queue-tick {
+  animation: queue-tick 1.2s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue-tick {
+    animation: none;
+  }
 }
