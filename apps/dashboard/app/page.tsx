@@ -93,14 +93,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         />
       ) : (
         <div className="flex flex-col gap-6">
-          <dl className="grid grid-cols-1 gap-4 border-y-2 border-ink py-5 sm:grid-cols-3 sm:gap-6">
+          <dl className="grid grid-cols-1 gap-4 border-y-2 border-ink py-5 sm:grid-cols-3 sm:gap-6 dark:border-neutral-100">
             {[
               { label: "Blocked", value: metrics.block_total, color: "text-block" },
               { label: "Waiting on a human", value: metrics.pending_total, color: "text-review" },
               { label: "Allowed", value: metrics.allow_total, color: "text-allow" },
             ].map((f) => (
               <div key={f.label}>
-                <dt className="text-sm text-neutral-500">{f.label}</dt>
+                <dt className="text-sm text-neutral-500 dark:text-neutral-400">{f.label}</dt>
                 <dd className={`mt-1 font-mono text-[56px] font-semibold leading-none tracking-tight ${f.color}`}>
                   {f.value}
                 </dd>
@@ -108,30 +108,30 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             ))}
           </dl>
           {metrics.pending_total > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-ink px-5 py-3.5">
-              <p className="text-sm font-medium text-white">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-ink px-5 py-3.5 dark:bg-neutral-100">
+              <p className="text-sm font-medium text-white dark:text-ink">
                 {metrics.pending_total} {metrics.pending_total === 1 ? "decision is" : "decisions are"} waiting for a ruling.
               </p>
-              <Link href="/approvals" className="rounded-[3px] bg-white px-3 py-1.5 text-[13px] font-bold text-ink">
+              <Link href="/approvals" className="rounded-[3px] bg-white px-3 py-1.5 text-[13px] font-bold text-ink dark:bg-ink dark:text-white">
                 Review the queue
               </Link>
             </div>
           )}
           <section aria-label="Latest rulings">
             <div className="flex items-baseline justify-between gap-4 pb-2">
-              <h2 className="text-[15px] font-bold tracking-tight text-ink">Latest rulings</h2>
-              <Link href="/decisions" className="text-[13px] font-medium text-ink underline">View all</Link>
+              <h2 className="text-[15px] font-bold tracking-tight text-ink dark:text-neutral-50">Latest rulings</h2>
+              <Link href="/decisions" className="text-[13px] font-medium text-ink underline dark:text-neutral-50">View all</Link>
             </div>
-            <ol className="border-t border-neutral-200">
+            <ol className="border-t border-neutral-200 dark:border-neutral-800">
               {recent.map((d) => (
-                <li key={d.id} className="flex items-center gap-4 border-b border-neutral-200 py-2.5">
+                <li key={d.id} className="flex items-center gap-4 border-b border-neutral-200 py-2.5 dark:border-neutral-800">
                   <span className={`w-1 shrink-0 self-stretch ${spine[d.outcome] ?? "bg-neutral-300"}`} aria-hidden="true" />
-                  <span className="w-20 shrink-0 font-mono text-xs text-neutral-500">{timeAgo(d.createdAt)}</span>
+                  <span className="w-20 shrink-0 font-mono text-xs text-neutral-500 dark:text-neutral-400">{timeAgo(d.createdAt)}</span>
                   <span className="min-w-0 flex-1">
-                    <Link href={`/decisions/${d.id}`} className="font-mono text-xs text-ink underline decoration-neutral-300 underline-offset-2">
+                    <Link href={`/decisions/${d.id}`} className="font-mono text-xs text-ink underline decoration-neutral-300 underline-offset-2 dark:text-neutral-50 dark:decoration-neutral-600">
                       {d.id}
                     </Link>
-                    <span className="block truncate text-[13px] text-neutral-500">
+                    <span className="block truncate text-[13px] text-neutral-500 dark:text-neutral-400">
                       {d.action ? `${d.action.toolId} by ${d.action.agentId}` : d.reason}
                     </span>
                   </span>
@@ -154,8 +154,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       aria-current={r.id === active.id ? "true" : undefined}
                       className={`rounded-md px-2.5 py-1 text-xs font-medium ${
                         r.id === active.id
-                          ? "bg-ink text-white"
-                          : "text-neutral-500 hover:bg-neutral-100 hover:text-ink"
+                          ? "bg-ink text-white dark:bg-neutral-100 dark:text-ink"
+                          : "text-neutral-500 hover:bg-neutral-100 hover:text-ink dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
                       }`}
                     >
                       {r.label}
@@ -165,7 +165,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               }
             >
               <AreaChart series={buckets} label={`Decisions over ${active.id === "all" ? "all time" : `the last ${active.label}`}`} />
-              <div className="mt-2 flex gap-4 text-xs text-neutral-500">
+              <div className="mt-2 flex gap-4 text-xs text-neutral-500 dark:text-neutral-400">
                 <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-[#15803d]" />Allow</span>
                 <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-[#b45309]" />Review</span>
                 <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-sm bg-[#b91c1c]" />Block</span>

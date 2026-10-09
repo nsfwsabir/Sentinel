@@ -34,14 +34,14 @@ export default function Sidebar() {
       .catch(() => setPending(null));
   }, [path]);
   return (
-    <nav className="flex flex-col gap-6 overflow-y-auto border-r border-neutral-200 bg-folio px-3 py-5" aria-label="Primary">
+    <nav className="flex flex-col gap-6 overflow-y-auto border-r border-neutral-200 bg-folio px-3 py-5 dark:border-neutral-800 dark:bg-neutral-900" aria-label="Primary">
       <Link href="/" className="flex items-center gap-2.5 px-2 pb-2">
         <Image src="/logo.png" alt="Sentinel logo" width={30} height={30} className="rounded-md" priority />
-        <span className="text-[22px] font-bold tracking-tight text-ink">Sentinel</span>
+        <span className="text-[22px] font-bold tracking-tight text-ink dark:text-neutral-50">Sentinel</span>
       </Link>
       {GROUPS.map((g) => (
         <div key={g.label}>
-          <p className="px-2.5 pb-1 text-sm font-semibold text-neutral-800">{g.label}</p>
+          <p className="px-2.5 pb-1 text-sm font-semibold text-neutral-800 dark:text-neutral-200">{g.label}</p>
           <div className="flex flex-col gap-px">
             {g.links.map((l) => {
               const isActive = active(l.href, path);
@@ -52,8 +52,8 @@ export default function Sidebar() {
                   aria-current={isActive ? "page" : undefined}
                   className={`relative flex items-center justify-between rounded-md px-2.5 py-1.5 text-sm ${
                     isActive
-                      ? "bg-white font-bold text-ink shadow-[inset_3px_0_0_0_#0a0a0a]"
-                      : "text-neutral-600 hover:bg-white hover:text-ink"
+                      ? "bg-white font-bold text-ink shadow-[inset_3px_0_0_0_#0a0a0a] dark:bg-neutral-800 dark:text-neutral-50 dark:shadow-[inset_3px_0_0_0_#fafafa]"
+                      : "text-neutral-600 hover:bg-white hover:text-ink dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
                   }`}
                 >
                   {l.label}

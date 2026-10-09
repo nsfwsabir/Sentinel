@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-voice: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-evidence: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
@@ -13,9 +15,21 @@
   --color-block: #b91c1c;
 }
 
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 2px solid #0a0a0a;
   outline-offset: 2px;
+}
+
+.dark a:focus-visible, .dark button:focus-visible, .dark input:focus-visible, .dark select:focus-visible, .dark textarea:focus-visible {
+  outline-color: #fafafa;
 }
 
 /* Single orchestrated motion: the queue count answers data changes. */
@@ -26,6 +40,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 .queue-tick {
   animation: queue-tick 1.2s ease-out 1;
+}
+
+.dark .queue-tick {
+  animation-name: queue-tick-dark;
+}
+
+@keyframes queue-tick-dark {
+  0% { background-color: #fafafa; color: #0a0a0a; }
+  100% { background-color: transparent; }
 }
 
 @media (prefers-reduced-motion: reduce) {

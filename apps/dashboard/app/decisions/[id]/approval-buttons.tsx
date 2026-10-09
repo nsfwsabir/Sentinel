@@ -7,7 +7,7 @@ export default function ApprovalButtons({ decisionId, status }: { decisionId: st
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   if (status === "approved" || status === "rejected") {
-    return <p className="font-mono text-xs text-neutral-500">Decision {status}.</p>;
+    return <p className="font-mono text-xs text-neutral-500 dark:text-neutral-400">Decision {status}.</p>;
   }
 
   async function act(action: "approve" | "reject") {
@@ -32,19 +32,19 @@ export default function ApprovalButtons({ decisionId, status }: { decisionId: st
 
   return (
     <div className="flex flex-col gap-2">
-      {error && <p className="text-sm text-[#b91c1c]">{error}</p>}
+      {error && <p className="text-sm text-[#b91c1c] dark:text-red-400">{error}</p>}
       <div className="flex gap-2">
         <button
           onClick={() => act("approve")}
           disabled={busy}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-60"
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-60 dark:bg-neutral-100 dark:text-ink dark:hover:bg-white"
         >
           Approve
         </button>
         <button
           onClick={() => act("reject")}
           disabled={busy}
-          className="rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-60"
+          className="rounded-md border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-60 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
         >
           Reject
         </button>

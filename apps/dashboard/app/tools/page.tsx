@@ -25,18 +25,18 @@ export default async function ToolsPage() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px]">
               <thead>
-                <tr className="text-left text-neutral-500">
-                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Tool</th>
-                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Description</th>
-                  <th className="border-b border-neutral-200 py-2 font-medium">Risk</th>
+                <tr className="text-left text-neutral-500 dark:text-neutral-400">
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium dark:border-neutral-800">Tool</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium dark:border-neutral-800">Description</th>
+                  <th className="border-b border-neutral-200 py-2 font-medium dark:border-neutral-800">Risk</th>
                 </tr>
               </thead>
               <tbody>
                 {tools.map((t) => (
-                  <tr key={t.id} className="hover:bg-neutral-50">
-                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{t.name}</td>
-                    <td className="border-b border-neutral-100 py-2 pr-3 text-neutral-600">{t.description}</td>
-                    <td className="border-b border-neutral-100 py-2 font-mono text-xs">{t.riskLevel}</td>
+                  <tr key={t.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800">
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs dark:border-neutral-800">{t.name}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 text-neutral-600 dark:border-neutral-800 dark:text-neutral-400">{t.description}</td>
+                    <td className="border-b border-neutral-100 py-2 font-mono text-xs dark:border-neutral-800">{t.riskLevel}</td>
                   </tr>
                 ))}
               </tbody>

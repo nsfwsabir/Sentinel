@@ -25,22 +25,22 @@ export default async function DecisionsPage() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px]">
               <thead>
-                <tr className="text-left text-neutral-500">
-                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Time</th>
-                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">ID</th>
-                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Decision</th>
-                  <th className="border-b border-neutral-200 py-2 font-medium">Reason</th>
+                <tr className="text-left text-neutral-500 dark:text-neutral-400">
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium dark:border-neutral-800">Time</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium dark:border-neutral-800">ID</th>
+                  <th className="border-b border-neutral-200 py-2 pr-3 font-medium dark:border-neutral-800">Decision</th>
+                  <th className="border-b border-neutral-200 py-2 font-medium dark:border-neutral-800">Reason</th>
                 </tr>
               </thead>
               <tbody>
                 {decisions.map((d) => (
-                  <tr key={d.id} className="hover:bg-neutral-50">
-                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs text-neutral-500">{new Date(d.createdAt).toLocaleTimeString()}</td>
-                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">
-                      <Link href={`/decisions/${d.id}`} className="underline decoration-neutral-300 underline-offset-2">{d.id}</Link>
+                  <tr key={d.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800">
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">{new Date(d.createdAt).toLocaleTimeString()}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs dark:border-neutral-800">
+                      <Link href={`/decisions/${d.id}`} className="underline decoration-neutral-300 underline-offset-2 dark:decoration-neutral-600">{d.id}</Link>
                     </td>
-                    <td className="border-b border-neutral-100 py-2 pr-3"><StatusPill value={d.outcome} /></td>
-                    <td className="border-b border-neutral-100 py-2 text-neutral-600">{d.reason}</td>
+                    <td className="border-b border-neutral-100 py-2 pr-3 dark:border-neutral-800"><StatusPill value={d.outcome} /></td>
+                    <td className="border-b border-neutral-100 py-2 text-neutral-600 dark:border-neutral-800 dark:text-neutral-400">{d.reason}</td>
                   </tr>
                 ))}
               </tbody>

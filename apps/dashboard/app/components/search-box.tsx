@@ -67,18 +67,18 @@ export default function SearchBox() {
         }}
         placeholder="Search by decision or policy ID…"
         aria-label="Search decisions and policies by ID"
-        className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none"
+        className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-500"
       />
       {open && hits.length > 0 && (
-        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg">
+        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
           {hits.map((h) => (
             <li key={h.href + h.label}>
               <button
                 onClick={() => go(h.href)}
-                className="flex w-full flex-col bg-white px-3 py-2 text-left hover:bg-neutral-50"
+                className="flex w-full flex-col bg-white px-3 py-2 text-left hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800"
               >
-                <span className="font-mono text-[12.5px] text-neutral-900">{h.label}</span>
-                <span className="text-xs text-neutral-500">{h.sub}</span>
+                <span className="font-mono text-[12.5px] text-neutral-900 dark:text-neutral-100">{h.label}</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">{h.sub}</span>
               </button>
             </li>
           ))}

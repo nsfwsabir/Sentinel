@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Card, PageHeader, StatusPill } from "../components/ui";
 
-const inputCls = "rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-normal text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none";
+const inputCls = "rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-normal text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-500";
 
 // Presets verified against the API: first three evaluate to allow,
 // the last one to block. Labels name the scenario, not the verdict,
@@ -73,21 +73,21 @@ export default function SimulatePage() {
                 setResult(null);
                 setError("");
               }}
-              className="rounded-[3px] border border-neutral-300 bg-white px-2.5 py-1 font-mono text-xs text-neutral-700 hover:border-ink hover:text-ink"
+              className="rounded-[3px] border border-neutral-300 bg-white px-2.5 py-1 font-mono text-xs text-neutral-700 hover:border-ink hover:text-ink dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-neutral-100 dark:hover:text-white"
             >
               {p.label}
             </button>
           ))}
         </div>
         <div className="grid max-w-xl gap-3">
-          <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
+          <label className="grid gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100">
             Agent
             <select className={inputCls} value={agent} onChange={(e) => setAgent(e.target.value)}>
               <option value="research-agent">Research Agent</option>
               <option value="deploy-agent">Deploy Agent</option>
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
+          <label className="grid gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100">
             Tool
             <select className={inputCls} value={tool} onChange={(e) => setTool(e.target.value)}>
               <option value="send_email">send_email</option>
@@ -96,12 +96,12 @@ export default function SimulatePage() {
               <option value="refund">refund</option>
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
+          <label className="grid gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100">
             Arguments
             <textarea rows={6} value={args} onChange={(e) => setArgs(e.target.value)} className={`${inputCls} font-mono text-xs`} />
           </label>
           <div>
-            <button onClick={evaluate} className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
+            <button onClick={evaluate} className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-ink dark:hover:bg-white">
               Evaluate action
             </button>
           </div>
@@ -109,7 +109,7 @@ export default function SimulatePage() {
       </Card>
       {error && (
         <Card title="Evaluation unavailable">
-          <p className="text-sm text-neutral-600">{error}</p>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">{error}</p>
         </Card>
       )}
       {result && (
@@ -117,11 +117,11 @@ export default function SimulatePage() {
           <div className="flex flex-col gap-2">
             <StatusPill value={result.decision} />
             {result.confidence != null && (
-              <p className="font-mono text-xs text-neutral-500">{Math.round(result.confidence * 100)}% confidence</p>
+              <p className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{Math.round(result.confidence * 100)}% confidence</p>
             )}
-            <p className="text-sm text-neutral-600">{result.reason}</p>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">{result.reason}</p>
             {result.decisionId && (
-              <a className="font-mono text-xs underline decoration-neutral-300 underline-offset-2" href={`/decisions/${result.decisionId}`}>
+              <a className="font-mono text-xs underline decoration-neutral-300 underline-offset-2 dark:decoration-neutral-600" href={`/decisions/${result.decisionId}`}>
                 View decision
               </a>
             )}

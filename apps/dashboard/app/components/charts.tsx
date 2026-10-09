@@ -37,7 +37,7 @@ export function AreaChart({ series, label = "Decisions over time" }: { series: {
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label={label}>
       {[0.25, 0.5, 0.75].map((f) => (
-        <line key={f} x1={pad} x2={w - pad} y1={h * f} y2={h * f} stroke="#e5e7eb" strokeWidth="1" />
+        <line key={f} x1={pad} x2={w - pad} y1={h * f} y2={h * f} strokeWidth="1" className="stroke-neutral-200 dark:stroke-neutral-800" />
       ))}
       {polys.map((p, i) => (
         <polygon key={i} points={p.pts} fill={p.fill} opacity={p.opacity} />
@@ -59,7 +59,7 @@ export function Donut({ allow, review, block }: { allow: number; review: number;
   return (
     <div className="flex items-center gap-5">
       <svg width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="Decision mix">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="#f0f0f0" strokeWidth="16" />
+        <circle cx="70" cy="70" r={R} fill="none" strokeWidth="16" className="stroke-neutral-100 dark:stroke-neutral-800" />
         {segs.map((s, i) => {
           const frac = s.v / total;
           const el = (
@@ -80,7 +80,7 @@ export function Donut({ allow, review, block }: { allow: number; review: number;
           offset += frac;
           return el;
         })}
-        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="22" fontWeight="600" fill="#111">
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="22" fontWeight="600" className="fill-neutral-900 dark:fill-neutral-100">
           {allow + review + block}
         </text>
       </svg>
@@ -90,12 +90,12 @@ export function Donut({ allow, review, block }: { allow: number; review: number;
           { label: "Review", v: review, color: "#b45309" },
           { label: "Blocked", v: block, color: "#b91c1c" },
         ].map((r) => (
-          <li key={r.label} className="flex items-baseline justify-between gap-4 border-b border-neutral-100 py-1.5">
-            <span className="flex items-center gap-2 text-neutral-600">
+          <li key={r.label} className="flex items-baseline justify-between gap-4 border-b border-neutral-100 py-1.5 dark:border-neutral-800">
+            <span className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
               <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: r.color }} />
               {r.label}
             </span>
-            <span className="font-mono text-xs font-semibold text-ink">{r.v}</span>
+            <span className="font-mono text-xs font-semibold text-ink dark:text-neutral-50">{r.v}</span>
           </li>
         ))}
       </ul>

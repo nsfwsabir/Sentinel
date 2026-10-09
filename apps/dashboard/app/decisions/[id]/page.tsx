@@ -10,7 +10,7 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
   if (!r.ok) {
     return (
       <div>
-        <Link href="/decisions" className="text-sm text-neutral-500 hover:text-neutral-900">← Decisions</Link>
+        <Link href="/decisions" className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100">← Decisions</Link>
         <p className="mt-4">Not found.</p>
       </div>
     );
@@ -25,28 +25,28 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
   return (
     <div className="flex max-w-3xl flex-col gap-4">
       <div>
-        <Link href="/decisions" className="text-sm text-neutral-500 hover:text-neutral-900">← Decisions</Link>
+        <Link href="/decisions" className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100">← Decisions</Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <StatusPill value={d.outcome} />
-          <h1 className="font-mono text-lg text-neutral-900">{d.action?.toolId}</h1>
+          <h1 className="font-mono text-lg text-neutral-900 dark:text-neutral-100">{d.action?.toolId}</h1>
           {d.risk && (
-            <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-0.5 font-mono text-[11px] text-neutral-600">
+            <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-0.5 font-mono text-[11px] text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
               RISK {d.risk.score} · {d.risk.band.toUpperCase()}
             </span>
           )}
         </div>
-        <p className="mt-1 font-mono text-xs text-neutral-500">{d.action?.agentId} · {d.id}</p>
+        <p className="mt-1 font-mono text-xs text-neutral-500 dark:text-neutral-400">{d.action?.agentId} · {d.id}</p>
       </div>
       <Card title="Action">
-        <pre className="overflow-auto rounded-lg bg-neutral-100 p-3 font-mono text-xs">{JSON.stringify(d.action?.arguments ?? {}, null, 2)}</pre>
+        <pre className="overflow-auto rounded-lg bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-800">{JSON.stringify(d.action?.arguments ?? {}, null, 2)}</pre>
       </Card>
       <Card title="Policies">
         {d.policyIds.length === 0 ? (
-          <p className="text-[13px] text-neutral-500">No policies matched.</p>
+          <p className="text-[13px] text-neutral-500 dark:text-neutral-400">No policies matched.</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {d.policyIds.map((p) => (
-              <li key={p} className="font-mono text-xs text-neutral-700">{p}</li>
+              <li key={p} className="font-mono text-xs text-neutral-700 dark:text-neutral-300">{p}</li>
             ))}
           </ul>
         )}
@@ -54,18 +54,18 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
       <Card title="Judgments">
         <table className="w-full border-collapse text-[13px]">
           <thead>
-            <tr className="text-left text-neutral-500">
-              <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Question</th>
-              <th className="border-b border-neutral-200 py-2 pr-3 font-medium">Answer</th>
-              <th className="border-b border-neutral-200 py-2 font-medium">Confidence</th>
+            <tr className="text-left text-neutral-500 dark:text-neutral-400">
+              <th className="border-b border-neutral-200 py-2 pr-3 font-medium dark:border-neutral-800">Question</th>
+              <th className="border-b border-neutral-200 py-2 pr-3 font-medium dark:border-neutral-800">Answer</th>
+              <th className="border-b border-neutral-200 py-2 font-medium dark:border-neutral-800">Confidence</th>
             </tr>
           </thead>
           <tbody>
             {d.judgments.map((j) => (
               <tr key={j.question}>
-                <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{j.question}</td>
-                <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs">{String(j.answer).toUpperCase()}</td>
-                <td className="border-b border-neutral-100 py-2 font-mono text-xs">{j.confidence != null ? `${Math.round(j.confidence * 100)}%` : "—"}</td>
+                <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs dark:border-neutral-800">{j.question}</td>
+                <td className="border-b border-neutral-100 py-2 pr-3 font-mono text-xs dark:border-neutral-800">{String(j.answer).toUpperCase()}</td>
+                <td className="border-b border-neutral-100 py-2 font-mono text-xs dark:border-neutral-800">{j.confidence != null ? `${Math.round(j.confidence * 100)}%` : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -75,7 +75,7 @@ export default async function DecisionDetail({ params }: { params: Promise<{ id:
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <StatusPill value={d.outcome} />
-            <p className="text-sm text-neutral-600">{d.reason}</p>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">{d.reason}</p>
           </div>
           {d.outcome === "review" && <ApprovalButtons decisionId={d.id} status={d.approvalStatus} />}
         </div>

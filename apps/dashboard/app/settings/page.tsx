@@ -21,8 +21,8 @@ export default async function SettingsPage() {
       <Card title="Connection">
         <div className="flex flex-col gap-1.5 text-sm">
           <p>API: <span className="font-mono text-[13px]">{process.env.SENTINEL_API_URL ?? "http://localhost:3001"}</span></p>
-          <p className="text-neutral-500">Thresholds: high 0.90 · review below 0.80 (configurable via API env).</p>
-          <p className="text-neutral-500">Approvals require admin basic auth. Judgment provider key stays server-side.</p>
+          <p className="text-neutral-500 dark:text-neutral-400">Thresholds: high 0.90 · review below 0.80 (configurable via API env).</p>
+          <p className="text-neutral-500 dark:text-neutral-400">Approvals require admin basic auth. Judgment provider key stays server-side.</p>
         </div>
       </Card>
       <Card title="Laya Judgment Provider">
@@ -31,9 +31,9 @@ export default async function SettingsPage() {
             Provider: <span className="font-mono text-[13px]">{status.provider}</span>
             {status.mode && <> · Mode: <span className="font-mono text-[13px]">{status.mode}</span></>}
           </p>
-          <p className="text-neutral-500">Hosted (Laya Studio + your key) or self-hosted `laya-serve` via LAYA_API_URL. Sentinel never hosts Laya.</p>
+          <p className="text-neutral-500 dark:text-neutral-400">Hosted (Laya Studio + your key) or self-hosted `laya-serve` via LAYA_API_URL. Sentinel never hosts Laya.</p>
           {(status.warnings ?? []).map((w) => (
-            <p key={w} className="text-neutral-500">{w}</p>
+            <p key={w} className="text-neutral-500 dark:text-neutral-400">{w}</p>
           ))}
           <div className="mt-1">
             <ProviderTest />

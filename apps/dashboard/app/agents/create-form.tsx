@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Card } from "../components/ui";
 
-const inputCls = "rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-normal text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none";
+const inputCls = "rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-normal text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:border-neutral-500";
 
 export default function CreateAgentForm() {
   const router = useRouter();
@@ -33,21 +33,21 @@ export default function CreateAgentForm() {
   return (
     <Card title="Register agent">
       <div className="grid max-w-xl gap-3">
-        {error && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-[#b91c1c]">{error}</p>}
-        <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
+        {error && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-[#b91c1c] dark:border-red-900 dark:bg-red-950 dark:text-red-400">{error}</p>}
+        <label className="grid gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100">
           ID
           <input className={`${inputCls} font-mono text-xs`} value={id} onChange={(e) => setId(e.target.value)} placeholder="research-agent" />
         </label>
-        <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
+        <label className="grid gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100">
           Name
           <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Research Agent" />
         </label>
-        <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
+        <label className="grid gap-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100">
           Description
           <input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this agent does" />
         </label>
         <div>
-          <button onClick={save} className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
+          <button onClick={save} className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-ink dark:hover:bg-white">
             Register agent
           </button>
         </div>
