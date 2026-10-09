@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import type { StoredDecision } from "./store.js";
 
 // Hash-chained audit trail. Every stored decision carries prevHash + hash;
@@ -13,6 +13,8 @@ export type AuditCheckpoint = {
   headId: string;
   headHash: string;
   deletedCount: number;
+  /** Base64 Ed25519 signature over checkpointContent; absent when no key configured. */
+  signature?: string;
 };
 
 export type AuditVerifyResult = {
@@ -94,4 +96,60 @@ export function verifyDecisions(
     checked += 1;
   }
   return { ok: true, checked, unchained, bridged };
+}
+
+/** Canonical checkpoint content: what the signature covers. */
+export function checkpointContent(c: AuditCheckpoint): string {
+  return canonicalize({
+    id: c.id,
+    createdAt: c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt),
+    headId: c.headId,
+    headHash: c.headHash,
+    deletedCount: c.deletedCount,
+  });
+}
+
+export type AuditSigner = { publicKey: string };
+
+let cachedRaw: string | null = null;
+let cachedSigner: AuditSigner | { publicKey: null } | null = null;
+
+// Offline Ed25519 key. AUDIT_SIGNING_KEY is base64 PKCS8 DER; when unset,
+// checkpoints stay unsigned (hash chain still verifies, origin unproven).
+// Cached per key value so env changes (tests, rotation) take effect.
+export function getAuditSigner(): AuditSigner | { publicKey: null } {
+  const raw = (process.env.AUDIT_SIGNING_KEY ?? "").trim();
+  if (cachedSigner && cachedRaw === raw) return cachedSigner;
+  cachedRaw = raw;
+  if (!raw) return (cachedSigner = { publicKey: null });
+  try {
+    const privateKey = createPrivateKey({ key: Buffer.from(raw, "base64"), format: "der", type: "pkcs8" });
+    const publicKey = createPublicKey(privateKey).export({ format: "der", type: "spki" }).toString("base64");
+    return (cachedSigner = { publicKey });
+  } catch {
+    return (cachedSigner = { publicKey: null });
+  }
+}
+
+/** Sign a checkpoint in place; no-op when no key is configured. */
+export function signCheckpoint(c: AuditCheckpoint): AuditCheckpoint {
+  const raw = (process.env.AUDIT_SIGNING_KEY ?? "").trim();
+  if (!raw) return c;
+  try {
+    const privateKey = createPrivateKey({ key: Buffer.from(raw, "base64"), format: "der", type: "pkcs8" });
+    c.signature = sign(null, Buffer.from(checkpointContent(c), "utf8"), privateKey).toString("base64");
+  } catch {
+    // Invalid key: leave unsigned rather than writing a bad signature.
+  }
+  return c;
+}
+
+export function verifyCheckpointSignature(c: AuditCheckpoint, publicKey: string): boolean {
+  if (!c.signature) return false;
+  try {
+    const key = createPublicKey({ key: Buffer.from(publicKey, "base64"), format: "der", type: "spki" });
+    return verify(null, Buffer.from(checkpointContent(c), "utf8"), key, Buffer.from(c.signature, "base64"));
+  } catch {
+    return false;
+  }
 }

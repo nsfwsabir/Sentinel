@@ -89,6 +89,26 @@ describe("api", () => {
     expect(approved.json().approvalStatus).toBe("approved");
   });
 
+  it("drops decided reviews from the pending queue", async () => {
+    const app = await buildServer(createMemoryStore());
+    const KEY = { "x-api-key": "dev-key-1" };
+    const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
+    const mk = (amount: number) =>
+      app.inject({
+        method: "POST",
+        url: "/v1/actions/evaluate",
+        headers: KEY,
+        payload: { agentId: "deploy-agent", toolId: "refund", arguments: { amount }, context: {} },
+      });
+    const a = (await mk(500)).json().decisionId as string;
+    const b = (await mk(600)).json().decisionId as string;
+    expect((await app.inject({ method: "GET", url: "/v1/approvals" })).json().length).toBe(2);
+    await app.inject({ method: "POST", url: `/v1/approvals/${a}/approve`, headers: ADMIN });
+    await app.inject({ method: "POST", url: `/v1/approvals/${b}/reject`, headers: ADMIN });
+    const pending = (await app.inject({ method: "GET", url: "/v1/approvals" })).json() as { id: string }[];
+    expect(pending.map((d) => d.id)).toEqual([]);
+  });
+
   it("registers agents/tools and filters decisions + metrics", async () => {
     const app = await buildServer(createMemoryStore());
     const agent = await app.inject({
@@ -366,6 +386,34 @@ describe("api", () => {
       payload: { agentId: "research-agent", toolId: "send_email", arguments: { to: "external@example.com", attachment: "customers.csv" }, context: {} },
     });
     expect(await app.inject({ method: "GET", url: "/v1/audit/verify", headers: ADMIN }).then((r) => r.json())).toMatchObject({ ok: true, checked: 1 });
+  });
+
+  it("signs purge checkpoints when AUDIT_SIGNING_KEY is set", async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const prev = process.env.AUDIT_SIGNING_KEY;
+    try {
+      const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+      process.env.AUDIT_SIGNING_KEY = privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
+      const pub = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+      const app = await buildServer(createMemoryStore());
+      const KEY = { "x-api-key": "dev-key-1" };
+      const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
+      await app.inject({
+        method: "POST",
+        url: "/v1/actions/evaluate",
+        headers: KEY,
+        payload: { agentId: "research-agent", toolId: "send_email", arguments: { to: "external@example.com", attachment: "customers.csv" }, context: {} },
+      });
+      await app.inject({ method: "DELETE", url: "/v1/decisions?before=2099-01-01&includeApprovals=true", headers: ADMIN });
+      const v = await app.inject({ method: "GET", url: "/v1/audit/verify", headers: ADMIN }).then((r) => r.json());
+      expect(v.anchorPublicKey).toBe(pub);
+      expect(v.checkpoints.length).toBe(1);
+      expect(v.checkpoints[0]).toMatchObject({ signatureValid: true });
+      expect(typeof v.checkpoints[0].signature).toBe("string");
+    } finally {
+      if (prev === undefined) delete process.env.AUDIT_SIGNING_KEY;
+      else process.env.AUDIT_SIGNING_KEY = prev;
+    }
   });
 
   it("replays a stored action and dry-runs a candidate policy", async () => {

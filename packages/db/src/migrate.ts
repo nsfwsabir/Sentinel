@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS signals (id text primary key, source text not null, r
 ALTER TABLE decisions ADD COLUMN IF NOT EXISTS prev_hash text;
 ALTER TABLE decisions ADD COLUMN IF NOT EXISTS hash text;
 CREATE TABLE IF NOT EXISTS audit_checkpoints (id text primary key, head_id text not null, head_hash text not null, deleted_count integer not null default 0, created_at timestamptz not null default now());
+ALTER TABLE audit_checkpoints ADD COLUMN IF NOT EXISTS signature text;
 -- Jev-era column rename (idempotent; no-op on fresh databases).
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'decisions' AND column_name = 'jev_duration_ms') THEN

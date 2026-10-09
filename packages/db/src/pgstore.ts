@@ -1,5 +1,5 @@
 import { count, isNull, inArray, eq, lt, and, desc, ne, asc } from "drizzle-orm";
-import { GENESIS_HASH, hashDecisionContent } from "@sentinel/schemas";
+import { GENESIS_HASH, hashDecisionContent, signCheckpoint } from "@sentinel/schemas";
 import { db } from "./client.js";
 import * as s from "./schema.js";
 import type {
@@ -257,9 +257,12 @@ export function createPgStore(): Store {
       return rows.map((r) => toDecision(r, jm.get(r.id) ?? []));
     },
     async listReviewDecisions() {
+      // Pending only: approved/rejected reviews leave the queue.
       const rows = await d().select().from(s.decisions).where(eq(s.decisions.outcome, "review")).orderBy(s.decisions.createdAt);
       const jm = await judgmentsFor(rows.map((r) => r.id));
-      return rows.map((r) => toDecision(r, jm.get(r.id) ?? []));
+      return rows
+        .map((r) => toDecision(r, jm.get(r.id) ?? []))
+        .filter((dd) => !dd.approvalStatus || dd.approvalStatus === "pending");
     },
     async listAllDecisionsAsc() {
       const rows = await d().select().from(s.decisions).orderBy(asc(s.decisions.createdAt), asc(s.decisions.id));
@@ -268,13 +271,13 @@ export function createPgStore(): Store {
     },
     async saveCheckpoint(c: AuditCheckpoint) {
       await d().insert(s.auditCheckpoints).values({
-        id: c.id, headId: c.headId, headHash: c.headHash, deletedCount: c.deletedCount, createdAt: c.createdAt,
+        id: c.id, headId: c.headId, headHash: c.headHash, deletedCount: c.deletedCount, signature: c.signature ?? null, createdAt: c.createdAt,
       }).onConflictDoNothing();
     },
     async listCheckpoints() {
       const rows = await d().select().from(s.auditCheckpoints).orderBy(asc(s.auditCheckpoints.createdAt));
       return rows.map((r) => ({
-        id: r.id, headId: r.headId, headHash: r.headHash, deletedCount: r.deletedCount ?? 0, createdAt: r.createdAt,
+        id: r.id, headId: r.headId, headHash: r.headHash, deletedCount: r.deletedCount ?? 0, signature: r.signature ?? undefined, createdAt: r.createdAt,
       }));
     },
     async purgeDecisions(before, opts) {
@@ -304,12 +307,20 @@ export function createPgStore(): Store {
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
         .at(-1);
       if (head?.hash) {
-        await d().insert(s.auditCheckpoints).values({
+        const checkpoint = signCheckpoint({
           id: `chk_${Date.now().toString(36)}`,
           headId: head.id,
           headHash: head.hash,
           deletedCount: removedHashes.length,
           createdAt: new Date(),
+        });
+        await d().insert(s.auditCheckpoints).values({
+          id: checkpoint.id,
+          headId: checkpoint.headId,
+          headHash: checkpoint.headHash,
+          deletedCount: checkpoint.deletedCount,
+          signature: checkpoint.signature ?? null,
+          createdAt: checkpoint.createdAt,
         }).onConflictDoNothing();
       }
       let actionsDeleted = 0;

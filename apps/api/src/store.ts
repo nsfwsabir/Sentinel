@@ -1,4 +1,4 @@
-import { GENESIS_HASH, hashDecisionContent } from "@sentinel/schemas";
+import { GENESIS_HASH, hashDecisionContent, signCheckpoint } from "@sentinel/schemas";
 import type {
   Agent,
   Tool,
@@ -119,7 +119,10 @@ export function createMemoryStore(): Store {
       return list.slice(-limit).reverse();
     },
     async listReviewDecisions() {
-      return [...decisions.values()].filter((d) => d.outcome === "review");
+      // Pending only: approved/rejected reviews leave the queue.
+      return [...decisions.values()].filter(
+        (d) => d.outcome === "review" && (!d.approvalStatus || d.approvalStatus === "pending"),
+      );
     },
     async listAllDecisionsAsc() {
       return [...decisions.values()].sort(
@@ -201,13 +204,13 @@ export function createMemoryStore(): Store {
           .at(-1);
         if (head?.hash) {
           const checkpointId = `chk_${Date.now().toString(36)}`;
-          checkpoints.set(checkpointId, {
+          checkpoints.set(checkpointId, signCheckpoint({
             id: checkpointId,
             createdAt: new Date(),
             headId: head.id,
             headHash: head.hash,
             deletedCount: removed.length,
-          });
+          }));
         }
       }
       // Replay links several decisions to one action: delete only orphans.

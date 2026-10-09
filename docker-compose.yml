@@ -21,7 +21,9 @@ services:
       - "6380:6379"
 
   # One-shot schema migrate; api waits for it to complete.
+  # Same image as api so the two can never drift apart.
   migrate:
+    image: sentinel-api
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -32,6 +34,7 @@ services:
       - postgres
 
   api:
+    image: sentinel-api
     build:
       context: .
       dockerfile: Dockerfile.api

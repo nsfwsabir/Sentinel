@@ -101,5 +101,6 @@ export const auditCheckpoints = pgTable("audit_checkpoints", {
   headId: text("head_id").notNull(),
   headHash: text("head_hash").notNull(),
   deletedCount: integer("deleted_count").notNull().default(0),
+  signature: text("signature"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

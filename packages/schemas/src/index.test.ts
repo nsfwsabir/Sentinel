@@ -1,6 +1,7 @@
 import { AgentSchema, PolicySchema, DecisionSchema, EvaluateRequestSchema } from "./index.js";
 import type { StoredDecision } from "./index.js";
-import { GENESIS_HASH, hashDecisionContent, verifyDecisions } from "./audit.js";
+import { GENESIS_HASH, hashDecisionContent, verifyDecisions, signCheckpoint, verifyCheckpointSignature, getAuditSigner } from "./audit.js";
+import { generateKeyPairSync } from "node:crypto";
 import { describe, it, expect } from "vitest";
 
 describe("schemas", () => {
@@ -62,5 +63,33 @@ describe("schemas", () => {
     const d3 = link("d3", d2.hash!, "r3");
     expect(verifyDecisions([d3], [chk])).toMatchObject({ ok: true, checked: 1, bridged: ["chk_1"] });
     expect(verifyDecisions([d3], []).ok).toBe(false);
+  });
+
+  it("signs checkpoints and detects forged ones", () => {
+    const prev = process.env.AUDIT_SIGNING_KEY;
+    try {
+      const mk = (id: string, headHash: string) => ({ id, createdAt: new Date("2026-01-01T00:00:00Z"), headId: "d", headHash, deletedCount: 1 });
+      // Unsigned without a key.
+      delete process.env.AUDIT_SIGNING_KEY;
+      expect(getAuditSigner()).toEqual({ publicKey: null });
+      expect(signCheckpoint(mk("c0", "h")).signature).toBeUndefined();
+
+      const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+      const other = generateKeyPairSync("ed25519").publicKey;
+      process.env.AUDIT_SIGNING_KEY = privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
+      const pub = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+      expect(getAuditSigner()).toEqual({ publicKey: pub });
+
+      const signed = signCheckpoint(mk("c1", "abc"));
+      expect(typeof signed.signature).toBe("string");
+      expect(verifyCheckpointSignature(signed, pub)).toBe(true);
+      // Tampered content and wrong key both fail.
+      expect(verifyCheckpointSignature({ ...signed, deletedCount: 2 }, pub)).toBe(false);
+      expect(verifyCheckpointSignature(signed, other.export({ format: "der", type: "spki" }).toString("base64"))).toBe(false);
+      expect(verifyCheckpointSignature(mk("c2", "abc"), pub)).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.AUDIT_SIGNING_KEY;
+      else process.env.AUDIT_SIGNING_KEY = prev;
+    }
   });
 });

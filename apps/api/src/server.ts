@@ -4,7 +4,7 @@ import { evaluateDeterministic, redactSecrets } from "@sentinel/policy-engine";
 import { evaluatePolicies } from "@sentinel/policy-opa";
 import { decide, riskScore } from "@sentinel/decision-engine";
 import { providerFromEnv } from "@sentinel/judgment-provider";
-import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema, verifyDecisions } from "@sentinel/schemas";
+import { EvaluateRequestSchema, PolicySchema, AgentSchema, ToolSchema, verifyDecisions, getAuditSigner, verifyCheckpointSignature } from "@sentinel/schemas";
 import { parseBasicAuth, verifyAdminCredentials } from "./auth.js";
 import { authenticateAgent, agentAuthFromEnv, seedEnvKeys, generateApiKey, hashApiKey, type AgentAuthOptions } from "./agentAuth.js";
 import { childLogger } from "@sentinel/logger";
@@ -511,11 +511,21 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
 
   // Audit integrity: recompute the decision hash chain and report the
   // first break (if any) plus retention checkpoints (chain restarts).
+  // Checkpoints carry Ed25519 signatures when AUDIT_SIGNING_KEY is set;
+  // anchorPublicKey lets third parties verify origin offline.
   app.get("/v1/audit/verify", async (req, reply) => {
     if (!(await checkIpLimit(req, reply, "purge", adminLimit()))) return;
     await requireAdmin(req);
     const [rows, checkpoints] = await Promise.all([store.listAllDecisionsAsc(), store.listCheckpoints()]);
-    return verifyDecisions(rows, checkpoints);
+    const { publicKey } = getAuditSigner();
+    return {
+      ...verifyDecisions(rows, checkpoints),
+      anchorPublicKey: publicKey,
+      checkpoints: checkpoints.map((c) => ({
+        ...c,
+        signatureValid: publicKey ? verifyCheckpointSignature(c, publicKey) : null,
+      })),
+    };
   });
 
   // Provider status (public metadata, never secrets) + connection test (admin).
