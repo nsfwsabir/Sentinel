@@ -37,8 +37,10 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
 
 const STAMP_TONES: Record<string, string> = {
   allow: "border-allow/60 text-allow dark:border-green-500/60 dark:text-green-400",
+  approved: "border-allow/60 text-allow dark:border-green-500/60 dark:text-green-400",
   review: "border-review/60 text-review dark:border-amber-500/60 dark:text-amber-400",
   block: "border-block/70 text-block dark:border-red-500/70 dark:text-red-400",
+  rejected: "border-block/70 text-block dark:border-red-500/70 dark:text-red-400",
 };
 
 // Verdict stamp: square rubber-stamp voice. Caps here are the subject's

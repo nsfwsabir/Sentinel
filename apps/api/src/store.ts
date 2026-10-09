@@ -170,11 +170,14 @@ export function createMemoryStore(): Store {
     },
     async metrics() {      const all = [...decisions.values()];
       const count = (f: (d: StoredDecision) => boolean) => all.filter(f).length;
+      const decided = (d: StoredDecision) => d.approvalStatus === "approved" || d.approvalStatus === "rejected";
+      // Final disposition: a decided review counts as allowed/blocked,
+      // so the figures always sum to the total.
       return {
         decisions_total: all.length,
-        allow_total: count((d) => d.outcome === "allow"),
-        review_total: count((d) => d.outcome === "review"),
-        block_total: count((d) => d.outcome === "block"),
+        allow_total: count((d) => d.outcome === "allow" || d.approvalStatus === "approved"),
+        review_total: count((d) => d.outcome === "review" && !decided(d)),
+        block_total: count((d) => d.outcome === "block" || d.approvalStatus === "rejected"),
         fallback_total: count((d) => d.fallbackUsed === true),
         approvals_total: count((d) => d.approvalStatus === "approved" || d.approvalStatus === "rejected"),
         pending_total: count((d) => d.outcome === "review" && (!d.approvalStatus || d.approvalStatus === "pending")),

@@ -10,6 +10,7 @@ type Decision = {
   id: string;
   actionId: string;
   outcome: "allow" | "review" | "block";
+  approvalStatus?: "pending" | "approved" | "rejected";
   reason: string;
   createdAt: string;
   action?: { agentId: string; toolId: string };
@@ -49,11 +50,24 @@ function bucketed(decisions: Decision[], windowMs: number) {
     const age = now - new Date(d.createdAt).getTime();
     if (age < 0 || age >= windowMs) continue;
     const i = Number.isFinite(windowMs) ? N - 1 - Math.floor((age / windowMs) * N) : N - 1;
-    if (d.outcome === "allow") allow[i] += 1;
-    else if (d.outcome === "review") review[i] += 1;
-    else if (d.outcome === "block") block[i] += 1;
+    const final = finalOutcome(d);
+    if (final === "allow") allow[i] += 1;
+    else if (final === "review") review[i] += 1;
+    else if (final === "block") block[i] += 1;
   }
   return { allow, review, block };
+}
+
+// The docket's final word: a decided review reads as its human ruling.
+function finalOutcome(d: Decision): "allow" | "review" | "block" {
+  if (d.approvalStatus === "approved") return "allow";
+  if (d.approvalStatus === "rejected") return "block";
+  return d.outcome;
+}
+
+function rulingLabel(d: Decision): string {
+  if (d.approvalStatus === "approved" || d.approvalStatus === "rejected") return d.approvalStatus;
+  return d.outcome;
 }
 
 function timeAgo(iso: string) {
@@ -130,7 +144,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <ol className="border-t border-neutral-200 dark:border-neutral-800">
               {recent.map((d) => (
                 <li key={d.id} className="flex items-center gap-4 border-b border-neutral-200 py-2.5 dark:border-neutral-800">
-                  <span className={`w-1 shrink-0 self-stretch ${spine[d.outcome] ?? "bg-neutral-300 dark:bg-neutral-700"}`} aria-hidden="true" />
+                  <span className={`w-1 shrink-0 self-stretch ${spine[finalOutcome(d)] ?? "bg-neutral-300 dark:bg-neutral-700"}`} aria-hidden="true" />
                   <span className="w-20 shrink-0 font-mono text-xs text-neutral-500 dark:text-neutral-400">{timeAgo(d.createdAt)}</span>
                   <span className="min-w-0 flex-1">
                     <Link href={`/decisions/${d.id}`} className="font-mono text-xs text-ink underline decoration-neutral-300 underline-offset-2 dark:text-neutral-50 dark:decoration-neutral-600">
@@ -140,7 +154,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       {d.action ? `${d.action.toolId} by ${d.action.agentId}` : d.reason}
                     </span>
                   </span>
-                  <StatusPill value={d.outcome} />
+                  <StatusPill value={rulingLabel(d)} />
                 </li>
               ))}
             </ol>

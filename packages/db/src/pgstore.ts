@@ -1,4 +1,4 @@
-import { count, isNull, inArray, eq, lt, and, desc, ne, asc } from "drizzle-orm";
+import { count, isNull, inArray, eq, lt, and, desc, ne, asc, or } from "drizzle-orm";
 import { GENESIS_HASH, hashDecisionContent, signCheckpoint } from "@sentinel/schemas";
 import { db } from "./client.js";
 import * as s from "./schema.js";
@@ -410,9 +410,9 @@ export function createPgStore(): Store {
       };
       const [total, allow, review, block, fallback, approved, rejected, pending, pendingNull] = await Promise.all([
         n(),
-        n(eq(s.decisions.outcome, "allow")),
-        n(eq(s.decisions.outcome, "review")),
-        n(eq(s.decisions.outcome, "block")),
+        n(or(eq(s.decisions.outcome, "allow"), eq(s.decisions.approvalStatus, "approved"))),
+        n(and(eq(s.decisions.outcome, "review"), or(eq(s.decisions.approvalStatus, "pending"), isNull(s.decisions.approvalStatus)))),
+        n(or(eq(s.decisions.outcome, "block"), eq(s.decisions.approvalStatus, "rejected"))),
         n(eq(s.decisions.fallbackUsed, true)),
         n(eq(s.decisions.approvalStatus, "approved")),
         n(eq(s.decisions.approvalStatus, "rejected")),

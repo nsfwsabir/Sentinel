@@ -107,6 +107,14 @@ describe("api", () => {
     await app.inject({ method: "POST", url: `/v1/approvals/${b}/reject`, headers: ADMIN });
     const pending = (await app.inject({ method: "GET", url: "/v1/approvals" })).json() as { id: string }[];
     expect(pending.map((d) => d.id)).toEqual([]);
+    // Final disposition: the approved review counts as allowed, the rejected as blocked.
+    expect(await app.inject({ method: "GET", url: "/v1/metrics" }).then((r) => r.json())).toMatchObject({
+      decisions_total: 2,
+      allow_total: 1,
+      review_total: 0,
+      block_total: 1,
+      pending_total: 0,
+    });
   });
 
   it("registers agents/tools and filters decisions + metrics", async () => {
