@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, PageHeader, StatusPill, EmptyState } from "./components/ui";
 import { AuditBadge } from "./components/audit-badge";
+import { TapeRefresh } from "./components/tape-refresh";
 import { AreaChart, Donut } from "./components/charts";
 
 const API = process.env.SENTINEL_API_URL ?? "http://localhost:3001";
@@ -118,9 +119,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             </div>
           )}
           <section aria-label="Latest rulings">
+            <TapeRefresh />
             <div className="flex items-baseline justify-between gap-4 pb-2">
               <h2 className="text-[15px] font-bold tracking-tight text-ink dark:text-neutral-50">Latest rulings</h2>
-              <Link href="/decisions" className="text-[13px] font-medium text-ink underline dark:text-neutral-50">View all</Link>
+              <div className="flex items-baseline gap-3">
+                <span className="text-xs text-neutral-400 dark:text-neutral-500">Auto-refreshes</span>
+                <Link href="/decisions" className="text-[13px] font-medium text-ink underline dark:text-neutral-50">View all</Link>
+              </div>
             </div>
             <ol className="border-t border-neutral-200 dark:border-neutral-800">
               {recent.map((d) => (
