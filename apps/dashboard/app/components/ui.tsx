@@ -8,7 +8,7 @@ export function Card({ title, subtitle, action, children, className = "" }: {
   className?: string;
 }) {
   return (
-    <section className={`rounded-lg border border-neutral-200 bg-white ${className}`}>
+    <section className={`rounded-lg border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900 ${className}`}>
       {(title || action) && (
         <header className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-3.5 dark:border-neutral-800">
           <div>

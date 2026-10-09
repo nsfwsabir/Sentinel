@@ -130,7 +130,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <ol className="border-t border-neutral-200 dark:border-neutral-800">
               {recent.map((d) => (
                 <li key={d.id} className="flex items-center gap-4 border-b border-neutral-200 py-2.5 dark:border-neutral-800">
-                  <span className={`w-1 shrink-0 self-stretch ${spine[d.outcome] ?? "bg-neutral-300"}`} aria-hidden="true" />
+                  <span className={`w-1 shrink-0 self-stretch ${spine[d.outcome] ?? "bg-neutral-300 dark:bg-neutral-700"}`} aria-hidden="true" />
                   <span className="w-20 shrink-0 font-mono text-xs text-neutral-500 dark:text-neutral-400">{timeAgo(d.createdAt)}</span>
                   <span className="min-w-0 flex-1">
                     <Link href={`/decisions/${d.id}`} className="font-mono text-xs text-ink underline decoration-neutral-300 underline-offset-2 dark:text-neutral-50 dark:decoration-neutral-600">
