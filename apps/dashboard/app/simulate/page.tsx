@@ -4,6 +4,36 @@ import { Card, PageHeader, StatusPill } from "../components/ui";
 
 const inputCls = "rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-normal text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none";
 
+// Presets verified against the API: first three evaluate to allow,
+// the last one to block. Labels name the scenario, not the verdict,
+// so the page stays a simulator rather than an answer key.
+const PRESETS: { label: string; agent: string; tool: string; args: string }[] = [
+  {
+    label: "Clean database read",
+    agent: "research-agent",
+    tool: "query_database",
+    args: '{\n  "query": "SELECT name, price FROM products LIMIT 10"\n}',
+  },
+  {
+    label: "Routine email",
+    agent: "research-agent",
+    tool: "send_email",
+    args: '{\n  "to": "teammate@example.com",\n  "subject": "standup notes",\n  "body": "shipped the weekly report"\n}',
+  },
+  {
+    label: "Small refund",
+    agent: "research-agent",
+    tool: "refund",
+    args: '{\n  "amount": 25\n}',
+  },
+  {
+    label: "Customer data exfil",
+    agent: "research-agent",
+    tool: "send_email",
+    args: '{\n  "to": "external@example.com",\n  "attachment": "customers.csv"\n}',
+  },
+];
+
 export default function SimulatePage() {
   const [agent, setAgent] = useState("research-agent");
   const [tool, setTool] = useState("send_email");
@@ -32,6 +62,23 @@ export default function SimulatePage() {
     <div className="flex max-w-3xl flex-col gap-4">
       <PageHeader title="Simulate action" subtitle="Evaluate a hypothetical action without executing anything." />
       <Card title="Proposed action">
+        <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Example scenarios">
+          {PRESETS.map((p) => (
+            <button
+              key={p.label}
+              onClick={() => {
+                setAgent(p.agent);
+                setTool(p.tool);
+                setArgs(p.args);
+                setResult(null);
+                setError("");
+              }}
+              className="rounded-[3px] border border-neutral-300 bg-white px-2.5 py-1 font-mono text-xs text-neutral-700 hover:border-ink hover:text-ink"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <div className="grid max-w-xl gap-3">
           <label className="grid gap-1.5 text-sm font-medium text-neutral-900">
             Agent
