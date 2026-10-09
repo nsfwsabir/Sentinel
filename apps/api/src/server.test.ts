@@ -329,6 +329,21 @@ describe("api", () => {
     expect(list.json().length).toBe(1);
     expect(list.json()[0].rule).toBe("Shell in sentinel-api container");
 
+    // Host noise from other projects' containers is dropped, not stored.
+    const noise = await app.inject({
+      method: "POST",
+      url: "/v1/signals/falco",
+      headers: KEY,
+      payload: {
+        rule: "Sensitive file opened for reading by non-trusted program",
+        priority: "Warning",
+        output: "sensitive file read /etc/shadow",
+        output_fields: { "container.name": "other-postgres" },
+      },
+    });
+    expect(noise.statusCode).toBe(202);
+    expect((await app.inject({ method: "GET", url: "/v1/signals?source=falco" })).json().length).toBe(1);
+
     const ADMIN = { authorization: "Basic " + Buffer.from("admin:admin").toString("base64") };
     const purge = await app.inject({ method: "DELETE", url: "/v1/decisions?before=2099-01-01", headers: ADMIN });
     expect(purge.json().signalsDeleted).toBe(1);

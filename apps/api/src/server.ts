@@ -469,6 +469,13 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
       body.output_fields && typeof body.output_fields === "object"
         ? (body.output_fields as Record<string, unknown>)
         : {};
+    // Falco watches the whole host: only Sentinel-container alerts are our
+    // evidence. Host noise (other projects' containers, bare-metal procs)
+    // is acknowledged but not stored.
+    const containerName = fields["container.name"];
+    if (typeof containerName !== "string" || !containerName.startsWith("sentinel")) {
+      return reply.code(202).send({ dropped: true, reason: "non-sentinel container" });
+    }
     const signal = {
       id: `sig_${randomUUID().slice(0, 8)}`,
       source,
