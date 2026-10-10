@@ -1,6 +1,3 @@
-# local docs (per project instruction, not committed)
-docs/
-
 # deps
 node_modules/
 .pnp

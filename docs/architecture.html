@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel — Architecture</title>
+<style>
+  :root {
+    --bg: #fafafa; --fg: #111; --muted: #6b7280; --border: #e5e7eb;
+    --green: #15803d; --amber: #b45309; --red: #b91c1c; --blue: #1d4ed8;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 Inter, system-ui, -apple-system, sans-serif; }
+  header.hero { border-bottom: 1px solid var(--border); background: #fff; padding: 32px 24px; }
+  header.hero h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.02em; }
+  header.hero p { margin: 0; color: var(--muted); max-width: 78ch; }
+  nav.toc { position: sticky; top: 0; background: #fff; border-bottom: 1px solid var(--border);
+    padding: 10px 24px; display: flex; gap: 16px; flex-wrap: wrap; z-index: 5; }
+  nav.toc a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  nav.toc a:hover { color: var(--fg); }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 20px; letter-spacing: -0.01em; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h3 { font-size: 15px; margin: 20px 0 8px; }
+  p, li { max-width: 90ch; }
+  code, .mono { font-family: var(--mono); font-size: 0.86em; }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; }
+  pre { background: #111; color: #e5e5e5; padding: 14px 16px; border-radius: 8px;
+    overflow-x: auto; font-size: 12.5px; }
+  pre .c { color: #9ca3af; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 12px 0; background: #fff; }
+  th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 2px solid var(--border); padding: 8px 10px; }
+  td { border-bottom: 1px solid var(--border); padding: 8px 10px; vertical-align: top; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px;
+    border: 1px solid var(--border); font-family: var(--mono); white-space: nowrap; }
+  .pill.allow { color: var(--green); border-color: var(--green); }
+  .pill.review { color: var(--amber); border-color: var(--amber); }
+  .pill.block { color: var(--red); border-color: var(--red); }
+  .pill.planned { color: var(--amber); border-color: var(--amber); border-style: dashed; }
+  .pill.built { color: var(--green); border-color: var(--green); border-style: solid; }
+  svg.diagram { width: 100%; height: auto; background: #fff; border: 1px solid var(--border);
+    border-radius: 10px; }
+  .note { border-left: 3px solid var(--amber); background: #fffbeb; padding: 10px 14px;
+    border-radius: 0 8px 8px 0; font-size: 14px; }
+  .ok { border-left-color: var(--green); background: #f0fdf4; }
+  .trust { border: 1px solid var(--border); background: #fff; border-radius: 10px;
+    padding: 16px 18px; margin: 12px 0; }
+  .trust h3 { margin-top: 0; }
+  details { background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; margin: 8px 0; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  footer { border-top: 1px solid var(--border); padding: 16px 24px; color: var(--muted); font-size: 13px; }
+  @media print { nav.toc { display: none; } body { font-size: 12px; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <h1>Sentinel — Architecture</h1>
+  <p>Runtime policy enforcement for AI agents. Every proposed agent action is evaluated
+  against policy before execution and receives <span class="pill allow">ALLOW</span>,
+  <span class="pill review">REVIEW</span>, or <span class="pill block">BLOCK</span>.
+  Sentinel never executes tools itself; it is a gate, not an agent.
+  Self-hosted: run one isolated stack per environment.
+  Items marked
+  <span class="pill planned">planned</span> are agreed but not yet built.</p>
+</header>
+<nav class="toc">
+  <a href="#trust">Trust summary</a><a href="#map">System map</a><a href="#topo">Deployment</a>
+  <a href="#lifecycle">Lifecycle</a><a href="#providers">Judgment providers</a><a href="#data">Data model</a>
+  <a href="#audit">Audit &amp; anchoring</a><a href="#retention">Retention</a><a href="#dashboard">Dashboard</a>
+  <a href="#auth">Auth matrix</a><a href="#secrets">Secrets flow</a><a href="#failures">Failure modes</a>
+  <a href="#inventory">Inventory</a><a href="#notbuilt">Not built</a>
+</nav>
+<main>
+
+<section id="trust">
+<h2>1. Trust summary <span class="pill built">for operators &amp; auditors</span></h2>
+<div class="trust">
+<h3>Isolation</h3>
+<p>Each deployment is a <strong>dedicated stack</strong>: own API, dashboard, Postgres,
+Redis — run one per environment or team. There is deliberately no tenant column
+anywhere in the schema — leakage across stacks is impossible by construction, not by
+careful <code>WHERE</code> clauses.
+Engineer depth: <a href="#topo">§3</a>, <a href="#data">§6</a>.</p>
+</div>
+<div class="trust">
+<h3>Auditability</h3>
+<p>Every decision is hash-chained (<code>prev_hash → hash</code>, SHA-256 over canonical
+content). Retention purges write signed checkpoints bridging deleted ranges; checkpoint
+signatures (Ed25519, per-deployment offline key) let anyone verify origin without trusting
+the database. Weekly anchor copies sit in immutable R2 storage.
+Engineer depth: <a href="#audit">§7</a>.</p>
+</div>
+<div class="trust">
+<h3>Data handling</h3>
+<p>Action arguments are stored <strong>redacted</strong>; third-party judgment models
+receive redacted payloads only. Signals (Falco) are evidence, never auto-decisions;
+alerts from non-Sentinel containers are dropped at ingestion. Human approvals are
+first-class and audited — <span class="pill review">REVIEW</span> never auto-converts.
+Engineer depth: <a href="#lifecycle">§4</a>, <a href="#providers">§5</a>.</p>
+</div>
+</section>
+
+<section id="map">
+<h2>2. System map</h2>
+<svg class="diagram" viewBox="0 0 1040 640" role="img" aria-label="Sentinel system map">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8" fill="none" stroke="#6b7280" stroke-width="1.5"/>
+    </marker>
+  </defs>
+  <line x1="0" y1="36" x2="1040" y2="36" stroke="#e5e7eb"/>
+  <line x1="0" y1="150" x2="1040" y2="150" stroke="#e5e7eb"/>
+  <line x1="0" y1="232" x2="1040" y2="232" stroke="#e5e7eb"/>
+  <line x1="0" y1="472" x2="1040" y2="472" stroke="#e5e7eb"/>
+  <text x="16" y="58" font-size="12" font-weight="700" fill="#6b7280">CALLERS (untrusted input)</text>
+  <text x="16" y="172" font-size="12" font-weight="700" fill="#6b7280">EDGE — TLS, planned</text>
+  <text x="16" y="254" font-size="12" font-weight="700" fill="#6b7280">SENTINEL (trusted zone)</text>
+  <text x="16" y="494" font-size="12" font-weight="700" fill="#6b7280">BACKING SERVICES</text>
+  <g font-size="12">
+    <rect x="20" y="68" width="150" height="52" rx="8" fill="#fff" stroke="#9ca3af"/>
+    <text x="95" y="90" text-anchor="middle" font-weight="600">AI agents</text>
+    <text x="95" y="106" text-anchor="middle" fill="#6b7280" font-size="10">REST · MCP stdio · A2A</text>
+    <rect x="190" y="68" width="150" height="52" rx="8" fill="#fff" stroke="#9ca3af"/>
+    <text x="265" y="90" text-anchor="middle" font-weight="600">Dashboard</text>
+    <text x="265" y="106" text-anchor="middle" fill="#6b7280" font-size="10">browser → proxies</text>
+    <rect x="360" y="68" width="150" height="52" rx="8" fill="#fff" stroke="#9ca3af"/>
+    <text x="435" y="90" text-anchor="middle" font-weight="600">Falco</text>
+    <text x="435" y="106" text-anchor="middle" fill="#6b7280" font-size="10">signals only</text>
+    <rect x="530" y="68" width="170" height="52" rx="8" fill="#fff" stroke="#9ca3af"/>
+    <text x="615" y="90" text-anchor="middle" font-weight="600">Operators / CI</text>
+    <text x="615" y="106" text-anchor="middle" fill="#6b7280" font-size="10">keys, policies, purge</text>
+  </g>
+  <g font-size="12">
+    <rect x="20" y="182" width="340" height="40" rx="8" fill="#fff" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="190" y="198" text-anchor="middle" font-weight="700">Caddy — TLS front door</text>
+    <text x="190" y="212" text-anchor="middle" fill="#6b7280" font-size="10">automatic HTTPS · raw :3001 unpublished · planned</text>
+  </g>
+  <g font-size="12">
+    <rect x="20" y="262" width="120" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="80" y="285" text-anchor="middle" font-weight="700">Fastify API</text>
+    <text x="80" y="301" text-anchor="middle" fill="#6b7280" font-size="10">authN → limits → routes</text>
+    <rect x="150" y="262" width="150" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="225" y="285" text-anchor="middle" font-weight="700">Policy engine</text>
+    <text x="225" y="301" text-anchor="middle" fill="#6b7280" font-size="10">OPA-WASM → TS fallback</text>
+    <rect x="310" y="262" width="150" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="385" y="285" text-anchor="middle" font-weight="700">Decision engine</text>
+    <text x="385" y="301" text-anchor="middle" fill="#6b7280" font-size="10">BLOCK&gt;REVIEW&gt;ALLOW</text>
+    <rect x="470" y="262" width="165" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="552" y="285" text-anchor="middle" font-weight="700">Judgment registry*</text>
+    <text x="552" y="301" text-anchor="middle" fill="#6b7280" font-size="10">mock · laya · jev · custom</text>
+    <rect x="645" y="262" width="130" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="710" y="285" text-anchor="middle" font-weight="700">Approvals</text>
+    <text x="710" y="301" text-anchor="middle" fill="#6b7280" font-size="10">human, audited</text>
+    <rect x="785" y="262" width="150" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="860" y="285" text-anchor="middle" font-weight="700">A2A gateway :3002</text>
+    <text x="860" y="301" text-anchor="middle" fill="#6b7280" font-size="10">translate only, no policy</text>
+  </g>
+  <g font-size="12">
+    <rect x="20" y="502" width="140" height="52" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="90" y="524" text-anchor="middle" font-weight="600">Postgres</text>
+    <text x="90" y="540" text-anchor="middle" fill="#6b7280" font-size="10">source of truth</text>
+    <rect x="175" y="502" width="140" height="52" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="245" y="524" text-anchor="middle" font-weight="600">Redis</text>
+    <text x="245" y="540" text-anchor="middle" fill="#6b7280" font-size="10">rate limits</text>
+    <rect x="330" y="502" width="200" height="52" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="430" y="524" text-anchor="middle" font-weight="600">Laya · Jev · custom model</text>
+    <text x="430" y="540" text-anchor="middle" fill="#6b7280" font-size="10">judgments only, redacted args</text>
+    <rect x="545" y="502" width="160" height="52" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="625" y="524" text-anchor="middle" font-weight="600">OIDC issuer (BYO)</text>
+    <text x="625" y="540" text-anchor="middle" fill="#6b7280" font-size="10">agent + dashboard SSO</text>
+    <rect x="720" y="502" width="170" height="52" rx="8" fill="#fff" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="805" y="524" text-anchor="middle" font-weight="600">Cloudflare R2</text>
+    <text x="805" y="540" text-anchor="middle" fill="#6b7280" font-size="10">dumps + anchors · planned</text>
+  </g>
+  <g stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)">
+    <line x1="95" y1="120" x2="120" y2="180"/>
+    <line x1="265" y1="120" x2="230" y2="180"/>
+    <line x1="190" y1="222" x2="80" y2="260"/>
+    <line x1="140" y1="292" x2="148" y2="292"/>
+    <line x1="300" y1="292" x2="308" y2="292"/>
+    <line x1="460" y1="292" x2="468" y2="292"/>
+    <line x1="380" y1="322" x2="380" y2="500"/>
+    <line x1="552" y1="322" x2="455" y2="500"/>
+    <line x1="80" y1="322" x2="80" y2="500"/>
+  </g>
+  <g font-size="10" fill="#6b7280">
+    <text x="330" y="517">judge(state) → answers</text>
+    <text x="60" y="420">read/write (PgStore) · limits</text>
+  </g>
+</svg>
+<p>* Registry is <span class="pill planned">planned</span>: today <code>mock|laya</code> is a
+hardcoded binary in <code>providerFromEnv</code>. The enforcement boundary is the Fastify API:
+gateways translate protocols but never decide; models answer questions but never see policy
+outcomes; Postgres is the single source of truth. MCP is a stdio sidecar (no port), not a
+network service.</p>
+</section>
+
+<section id="topo">
+<h2>3. Deployment topology — one stack per environment</h2>
+<svg class="diagram" viewBox="0 0 1040 400" role="img" aria-label="Per-deployment topology">
+  <defs>
+    <marker id="arr3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8" fill="none" stroke="#6b7280" stroke-width="1.5"/>
+    </marker>
+  </defs>
+  <rect x="150" y="10" width="640" height="340" rx="12" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="10 6"/>
+  <text x="170" y="34" font-size="12" font-weight="700" fill="#111">One host per stack — VM or bare metal (fits a 2 OCPU / 12 GB box)</text>
+  <g font-size="12">
+    <rect x="170" y="48" width="600" height="48" rx="8" fill="#fff" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="470" y="68" text-anchor="middle" font-weight="700">Caddy :80/:443 (planned)</text>
+    <text x="470" y="84" text-anchor="middle" fill="#6b7280" font-size="10">api.host → :3001 · app.host → :3000 · raw :3001 unpublished</text>
+    <rect x="170" y="116" width="190" height="54" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="265" y="138" text-anchor="middle" font-weight="700">API :3001</text>
+    <text x="265" y="154" text-anchor="middle" fill="#6b7280" font-size="10">migrate gate → serve</text>
+    <rect x="380" y="116" width="190" height="54" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
+    <text x="475" y="138" text-anchor="middle" font-weight="700">Dashboard :3000</text>
+    <text x="475" y="154" text-anchor="middle" fill="#6b7280" font-size="10">standalone, runtime env</text>
+    <rect x="590" y="116" width="180" height="54" rx="8" fill="#fff" stroke="#9ca3af"/>
+    <text x="680" y="138" text-anchor="middle" font-weight="700">Falco (privileged)</text>
+    <text x="680" y="154" text-anchor="middle" fill="#6b7280" font-size="10">arm64 image · webhook in</text>
+    <rect x="170" y="190" width="190" height="54" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="265" y="212" text-anchor="middle" font-weight="700">Postgres :5432</text>
+    <text x="265" y="228" text-anchor="middle" fill="#6b7280" font-size="10">self-hosted in compose</text>
+    <rect x="380" y="190" width="190" height="54" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="475" y="212" text-anchor="middle" font-weight="700">Redis :6379</text>
+    <text x="475" y="228" text-anchor="middle" fill="#6b7280" font-size="10">limits only</text>
+    <rect x="590" y="190" width="180" height="54" rx="8" fill="#fff" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="680" y="212" text-anchor="middle" font-weight="700">Backup sidecar*</text>
+    <text x="680" y="228" text-anchor="middle" fill="#6b7280" font-size="10">nightly dump → R2</text>
+    <rect x="170" y="264" width="600" height="48" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="470" y="284" text-anchor="middle" font-weight="700">migrate (one-shot, api waits)</text>
+    <text x="470" y="300" text-anchor="middle" fill="#6b7280" font-size="10">same image as api — the two can never drift</text>
+  </g>
+  <g font-size="12">
+    <rect x="820" y="116" width="200" height="128" rx="8" fill="#fff" stroke="#9ca3af"/>
+    <text x="920" y="140" text-anchor="middle" font-weight="700">Cloudflare R2</text>
+    <text x="920" y="158" text-anchor="middle" fill="#6b7280" font-size="10">dumps/ · 7 daily + 4 weekly</text>
+    <text x="920" y="174" text-anchor="middle" fill="#6b7280" font-size="10">anchors/ · weekly checkpoints</text>
+    <text x="920" y="190" text-anchor="middle" fill="#6b7280" font-size="10">free tier · zero egress</text>
+    <text x="920" y="210" text-anchor="middle" fill="#6b7280" font-size="10">planned</text>
+  </g>
+  <g stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr3)">
+    <line x1="60" y1="72" x2="166" y2="72"/>
+    <line x1="470" y1="96" x2="470" y2="114"/>
+    <line x1="680" y1="170" x2="500" y2="200"/>
+    <line x1="680" y1="190" x2="680" y2="116"/>
+    <line x1="770" y1="217" x2="816" y2="190"/>
+  </g>
+  <g font-size="10" fill="#6b7280">
+    <text x="20" y="76">Internet</text>
+    <text x="600" y="262">pg_dump</text>
+  </g>
+</svg>
+<p>Reserved public IP + OS firewall (80/443) + DNS per deployment. All images are
+multi-arch, so ARM boxes (e.g. OCI Ampere) work with native builds. MCP/A2A join this
+diagram once packaged
+(<span class="pill planned">planned</span>).</p>
+</section>
+
+<section id="lifecycle">
+<h2>4. Request lifecycle — <code>POST /v1/actions/evaluate</code></h2>
+<svg class="diagram" viewBox="0 0 1040 640" role="img" aria-label="Evaluation sequence">
+  <defs>
+    <marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8" fill="none" stroke="#6b7280" stroke-width="1.5"/>
+    </marker>
+  </defs>
+  <g font-family="JetBrains Mono, monospace" font-size="11">
+    <rect x="30" y="20" width="980" height="46" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="50" y="48">1. authenticateAgent → OIDC sub binding · registry key · static fallback → 401</text>
+    <rect x="30" y="76" width="980" height="46" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="50" y="104">2. bound agentId ≠ body agentId → 403 · rate limit per agent → 429</text>
+    <rect x="30" y="132" width="980" height="46" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="50" y="160">3. Zod-validate body → 400 · load agent/tool/policies (scope filter)</text>
+    <rect x="30" y="188" width="980" height="66" rx="8" fill="#fff" stroke="#15803d" stroke-width="1.5"/>
+    <text x="50" y="210" font-weight="700">4. deterministic: OPA-WASM → TS fallback → findings</text>
+    <text x="50" y="230" fill="#6b7280">finding block? → BLOCK immediately (provider never consulted)</text>
+    <rect x="30" y="264" width="980" height="66" rx="8" fill="#fff" stroke="#15803d" stroke-width="1.5"/>
+    <text x="50" y="286" font-weight="700">5. contextual: provider.judge(state) → 5 noul judgments</text>
+    <text x="50" y="306" fill="#6b7280">throw? → fail-closed by tool risk (high→REVIEW/BLOCK, never silent ALLOW)</text>
+    <rect x="30" y="340" width="980" height="66" rx="8" fill="#fff" stroke="#15803d" stroke-width="1.5"/>
+    <text x="50" y="362" font-weight="700">6. decide(): BLOCK &gt; REVIEW &gt; ALLOW · hYes gated on confidence floor</text>
+    <text x="50" y="382" fill="#6b7280">REVIEW stays REVIEW · safe+clean → ALLOW</text>
+    <rect x="30" y="416" width="980" height="46" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="50" y="444">7. persist (redacted args) → hash-chain link → return envelope</text>
+    <rect x="30" y="472" width="980" height="46" rx="8" fill="#fff" stroke="#b45309" stroke-width="1.5"/>
+    <text x="50" y="500" font-weight="700">8. REVIEW → human approves/rejects (admin basic or approver-scope token) → audited</text>
+    <rect x="30" y="528" width="980" height="46" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+    <text x="50" y="556">9. decided reviews resolve to final disposition (metrics, tape) · replay re-links · purge honours approvals</text>
+  </g>
+  <g stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr2)">
+    <line x1="520" y1="66" x2="520" y2="74"/>
+    <line x1="520" y1="122" x2="520" y2="130"/>
+    <line x1="520" y1="178" x2="520" y2="186"/>
+    <line x1="520" y1="254" x2="520" y2="262"/>
+    <line x1="520" y1="330" x2="520" y2="338"/>
+    <line x1="520" y1="406" x2="520" y2="414"/>
+    <line x1="520" y1="462" x2="520" y2="470"/>
+    <line x1="520" y1="518" x2="520" y2="526"/>
+  </g>
+</svg>
+</section>
+
+<section id="providers">
+<h2>5. Judgment providers <span class="pill planned">registry planned</span></h2>
+<p>The provider answers five focused <code>noul</code> questions
+(<code>sensitive_exposure, policy_violation, human_review_needed, destructive,
+targets_production</code>) — never "should we allow this?". Deterministic code owns
+thresholds, precedence, and fail-closed behavior.</p>
+<table>
+<tr><th>Model</th><th>Status</th><th>Config</th></tr>
+<tr><td><code>mock</code></td><td><span class="pill built">built</span></td><td>Default when <code>JUDGMENT_PROVIDER</code> is unset. Deterministic stand-in, same question shapes.</td></tr>
+<tr><td><code>laya</code></td><td><span class="pill built">built</span></td><td><code>LAYA_API_URL</code> (default hosted Studio), <code>LAYA_API_KEY</code> (required hosted), <code>LAYA_MODEL</code>, <code>LAYA_TIMEOUT_MS</code>. One retry, then throw → fail-closed.</td></tr>
+<tr><td><code>jev</code> + compatibles</td><td><span class="pill planned">planned</span> (env-only)</td><td>Same System-One wire — generic HTTP provider, <code>JEV_API_URL/KEY/MODEL</code>. No new provider code.</td></tr>
+<tr><td>custom wire</td><td><span class="pill planned">planned</span></td><td>Implement <code>judge(state)</code> + <code>name</code> in one file, one <code>registerProvider</code> line. Receives redacted args by contract.</td></tr>
+</table>
+<div class="note"><strong>Fail-closed selection:</strong> unset/empty → mock. Any other unknown
+name → boot refusal listing registered providers (a typo must never silently evaluate
+against the mock). Per-deployment selection only — no per-request model switching, so the
+audit trail's <code>provider</code> attribution stays unambiguous.</div>
+</section>
+
+<section id="data">
+<h2>6. Data model — Postgres, no tenant column by design</h2>
+<table>
+<tr><th>Table</th><th>Key columns</th><th>Notes</th></tr>
+<tr><td><code>agents</code>, <code>tools</code></td><td>id, status / risk_level</td><td>Seeded with research/deploy agents + 4 tools</td></tr>
+<tr><td><code>policies</code></td><td>mode, severity, scope, agent_ids, version</td><td>History in <code>policy_versions</code>; revert supported</td></tr>
+<tr><td><code>actions</code></td><td>agent_id, tool_id, arguments (redacted), context</td><td>Replay links new decisions to the same action</td></tr>
+<tr><td><code>decisions</code></td><td>outcome, approval_status, prev_hash, hash, durations</td><td>Hash-chained; provider attribution <span class="pill planned">planned</span></td></tr>
+<tr><td><code>judgments</code></td><td>decision_id, question, noul answer, confidence</td><td>Five focused questions per evaluation</td></tr>
+<tr><td><code>api_keys</code></td><td>key_hash (unique), bound_agent_id</td><td>Plaintext returned once; rotation/revocation supported</td></tr>
+<tr><td><code>signals</code></td><td>source, rule, priority, fields</td><td>Non-Sentinel-container alerts dropped at ingestion</td></tr>
+<tr><td><code>audit_checkpoints</code></td><td>head_id, head_hash, deleted_count, signature</td><td>Bridge rows for purged ranges; see §7</td></tr>
+</table>
+<p class="note">DDL is idempotent (<code>IF NOT EXISTS</code> / <code>ADD COLUMN IF NOT
+EXISTS</code>) and applied by the one-shot <code>migrate</code> service sharing the API
+image. Memory store mirrors PgStore semantics for dev/test.</p>
+</section>
+
+<section id="audit">
+<h2>7. Audit &amp; anchoring</h2>
+<h3>Hash chain</h3>
+<p>Each stored decision carries <code>prev_hash</code> (previous head, or 64 zeros at
+genesis) and <code>hash</code> = SHA-256 over canonical JSON of the decision content
+(excluding the hash fields themselves). <code>GET /v1/audit/verify</code> (admin)
+recomputes the chain and reports <code>{ok, checked, unchained, bridged, firstBadId}</code>.
+Approval updates preserve links; legacy pre-chain rows are tolerated as
+<code>unchained</code> only before the chain starts.</p>
+<h3>Signed checkpoints</h3>
+<p>Purge writes a checkpoint of the newest deleted row <em>before</em> the gap, so a
+retention range stays verifiable. With <code>AUDIT_SIGNING_KEY</code> set (base64 PKCS8
+Ed25519, per deployment, offline), the checkpoint carries a signature over canonical
+<code>{id, createdAt, headId, headHash, deletedCount}</code>. The verify endpoint returns
+<code>anchorPublicKey</code> + per-checkpoint <code>signatureValid</code>, enabling fully
+offline third-party verification. Without a key, checkpoints stay unsigned and the hash
+chain still verifies (integrity without origin).</p>
+<h3>Dashboard badge</h3>
+<p>Overview shows an OK/BROKEN stamp fed by a same-origin proxy holding server-side admin
+credentials. A broken chain is a stop-everything event, not a warning to style away.</p>
+</section>
+
+<section id="retention">
+<h2>8. Retention — in-app purge + R2 <span class="pill planned">R2 planned</span></h2>
+<p><code>DELETE /v1/decisions?before=&amp;includeApprovals=&amp;limit=</code> (admin):
+approved/rejected rows are audit evidence and survive unless
+<code>includeApprovals=true</code>; orphaned actions and old signals go with the purge;
+every purged range leaves a signed bridge checkpoint (§7).</p>
+<p>Off-box: nightly compressed <code>pg_dump</code> to R2 (<code>dumps/</code>, 7 daily +
+4 weekly via lifecycle rules) plus weekly <code>{checkpoints, anchorPublicKey}</code>
+exports (<code>anchors/</code>). Restore drill = download → scratch restore → chain
+re-verify <code>ok:true</code>. R2 free tier (10 GB, 1M/10M ops, zero egress) covers this
+~1000× over for a first deployment.</p>
+</section>
+
+<section id="dashboard">
+<h2>9. Dashboard (Next.js standalone)</h2>
+<p>Docket-ledger UI: verdict tape with auto-refresh (10s, hidden tabs pause), queue-first
+overview resolving approvals to final disposition, simulate with verified scenario presets,
+dark mode (class strategy, system default), stamp pills for verdicts.</p>
+<table>
+<tr><th>Rule</th><th>Mechanism</th></tr>
+<tr><td>Browser never holds keys</td><td>Same-origin <code>/api/*</code> proxies carry server-side agent key / admin basic</td></tr>
+<tr><td>CSRF on mutations</td><td>Origin must match request host or <code>X-Forwarded-Host</code> (tunnel-safe); absent Origin allowed for curl</td></tr>
+<tr><td>No baked hosts</td><td><code>SENTINEL_API_URL</code> read per request (a <code>next.config env:</code> block once baked localhost into the image — removed, documented in-code)</td></tr>
+<tr><td>Pending queue everywhere</td><td>Sidebar live count with tick animation (reduced-motion safe)</td></tr>
+</table>
+<p>Settings provider card generalizes to the active model once the registry lands
+(<span class="pill planned">planned</span>); test-connection already uses the generic endpoint.</p>
+</section>
+
+<section id="auth">
+<h2>10. Auth matrix</h2>
+<table>
+<tr><th>Route group</th><th>Static key</th><th>Registry key</th><th>OIDC token</th><th>Admin basic</th><th>Dashboard session</th></tr>
+<tr><td><code>evaluate, replay, dry-run, signals</code></td><td>yes (deprecated)</td><td>yes (+agent binding)</td><td>yes (sub-bound)</td><td>no</td><td>n/a (proxy uses agent key)</td></tr>
+<tr><td><code>policies/agents/tools CRUD</code></td><td>yes</td><td>yes</td><td>yes</td><td>no</td><td>via proxy + session*</td></tr>
+<tr><td><code>approvals approve/reject</code></td><td>never</td><td>never</td><td>only with <code>sentinel:approvers</code></td><td>yes (scrypt)</td><td>via proxy + session*</td></tr>
+<tr><td><code>api-keys, purge, audit/verify, provider/test</code></td><td>never</td><td>never</td><td>never</td><td>yes (scrypt)</td><td>proxied with server creds</td></tr>
+<tr><td><code>decisions/metrics/status reads</code></td><td>public</td><td>public</td><td>public</td><td>public</td><td>public</td></tr>
+</table>
+<p class="note">* Session gate applies only when OIDC is configured; otherwise dev mode leaves browser proxies open and the API enforces with server-side credentials. Per-key quotas are <span class="pill planned">planned</span> (metering precedes money).</p>
+</section>
+
+<section id="secrets">
+<h2>11. Secrets flow</h2>
+<table>
+<tr><th>Secret</th><th>Lives in</th><th>Never in</th></tr>
+<tr><td>Agent tokens (<code>sk_live_…</code>)</td><td>Returned once at create/rotate; sha256 hash in store</td><td>Logs, list responses, errors, judgments, repo</td></tr>
+<tr><td>Admin password</td><td><code>ADMIN_PASS_HASH</code> (scrypt) env</td><td>Logs, responses, browser</td></tr>
+<tr><td>Model keys (<code>LAYA_API_KEY</code>, <code>JEV_API_KEY</code>…)</td><td>API server env → Bearer header</td><td>Browser, audit rows, error text (asserted in tests)</td></tr>
+<tr><td>Audit signing key</td><td>Offline + API env; public half published for verifiers</td><td>Repo, logs, responses except <code>anchorPublicKey</code></td></tr>
+<tr><td>OIDC client secret / <code>AUTH_SECRET</code></td><td>Dashboard server env (Auth.js)</td><td>Middleware edge checks use session token only</td></tr>
+<tr><td>R2 token</td><td>VM env file, bucket-scoped <span class="pill planned">planned</span></td><td>Repo, images, logs</td></tr>
+<tr><td>Action arguments</td><td>Redacted before persist <em>and</em> before any model call</td><td>Audit log, judgments, provider payloads</td></tr>
+</table>
+</section>
+
+<section id="failures">
+<h2>12. Failure modes</h2>
+<table>
+<tr><th>Failure</th><th>Behavior</th></tr>
+<tr><td>Model timeout / error / malformed</td><td>Fail closed by tool risk (high→REVIEW/BLOCK, never silent ALLOW); <code>fallback_used</code> audited</td></tr>
+<tr><td>Unknown <code>JUDGMENT_PROVIDER</code></td><td>Boot refusal listing registered names <span class="pill planned">planned</span> (today: silent mock — a fail-open honesty bug)</td></tr>
+<tr><td>Postgres unreachable at boot (when configured)</td><td>Crash loudly — no silent memory split-brain</td></tr>
+<tr><td>Schema drift at deploy</td><td><code>migrate --check</code> fails the deploy before traffic <span class="pill planned">planned</span></td></tr>
+<tr><td>Redis unavailable</td><td>Rate limiter fails open (documented); evaluation continues</td></tr>
+<tr><td>OPA bundle missing/corrupt</td><td>TypeScript engine fallback (warn once); identical output shape; CI proves bundle≡Rego</td></tr>
+<tr><td>JWKS rotation</td><td>jose remote set refetches on unknown kid (cooldown-bounded)</td></tr>
+<tr><td>Dev secrets in production</td><td>Boot refusal (<code>dev-key-1</code>, plaintext <code>admin</code>) — observed live, works</td></tr>
+<tr><td>Invalid body / 500s</td><td>400 with no schema internals; generic 500 message, full error server-side only</td></tr>
+<tr><td>Rate exceeded</td><td>429 (+ admin login-throttle); replay/dry-run share the limiter (no cost amplification)</td></tr>
+</table>
+</section>
+
+<section id="inventory">
+<h2>13. Component inventory</h2>
+<table>
+<tr><th>Component</th><th>Does</th><th>Must never</th></tr>
+<tr><td><code>apps/api</code> (Fastify :3001)</td><td>Auth, limits, routes, pipeline orchestration</td><td>Decide policy or judge context</td></tr>
+<tr><td><code>packages/policy-engine</code> + <code>policy-opa</code></td><td>Deterministic findings (Rego mirrors TS)</td><td>Call AI, invent thresholds</td></tr>
+<tr><td><code>packages/decision-engine</code></td><td>Precedence, thresholds, risk score, fail-closed</td><td>Auto-convert REVIEW→ALLOW</td></tr>
+<tr><td><code>packages/judgment-provider</code></td><td>Focused noul questions, normalization, timeouts</td><td>Become the policy engine</td></tr>
+<tr><td><code>packages/db</code></td><td>Schemas, PgStore/memory parity, migrate, limits</td><td>Expose keys or secrets</td></tr>
+<tr><td><code>packages/agent-sdk</code></td><td>Typed API client for agents</td><td>Interpret tool output as policy</td></tr>
+<tr><td><code>apps/dashboard</code> (Next.js :3000)</td><td>Docket UI: tape, queue, simulate, settings, dark mode</td><td>Hold keys, call models, bypass API auth</td></tr>
+<tr><td><code>apps/mcp</code> (stdio sidecar)</td><td>Protocol translation onto <code>/v1/actions/evaluate</code></td><td>Decide, approve, or skip Sentinel</td></tr>
+<tr><td><code>apps/a2a-gateway</code> (:3002, throttled)</td><td>Protocol translation onto <code>/v1/actions/evaluate</code></td><td>Decide, approve, or skip Sentinel</td></tr>
+<tr><td>Caddy, R2 sidecar, MCP/A2A packaging</td><td colspan="2"><span class="pill planned">planned</span> — Dockerfiles, compose services, CI jobs</td></tr>
+</table>
+<div class="note ok"><strong>Design rule reused throughout:</strong> detection and judgment are signals;
+only Sentinel's deterministic core produces ALLOW / REVIEW / BLOCK.</div>
+</section>
+
+<section id="notbuilt">
+<h2>14. Deliberately not built</h2>
+<table>
+<tr><th>Idea</th><th>Why not</th></tr>
+<tr><td>Shared multi-tenancy (tenant columns)</td><td>One missed <code>WHERE</code> leaks verdicts across tenants; separate stacks give hard isolation with zero new code. Revisit at scale pain.</td></tr>
+<tr><td>Per-request model switching</td><td>Fractures the audit trail and quota model; separate stacks already give each deployment its model.</td></tr>
+<tr><td>Self-serve signup portal</td><td>Invite-only provisioning until the metering/billing story exists; a signup page without quotas is a Laya-credit fire.</td></tr>
+<tr><td>Infrequent-access storage class</td><td>No free tier; Standard covers our volumes ~1000× over.</td></tr>
+</table>
+</section>
+
+</main>
+<footer>Sentinel architecture · re-verify against code after each phase (route/table/env names are load-bearing). Diagrams: pure inline SVG, no dependencies.</footer>
+</body>
+</html>
