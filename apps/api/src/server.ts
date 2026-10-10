@@ -537,13 +537,10 @@ export async function buildServer(store: Store = createMemoryStore(), opts?: { a
 
   // Provider status (public metadata, never secrets) + connection test (admin).
   app.get("/v1/provider/status", async () => {
-    if (process.env.JUDGMENT_PROVIDER !== "laya") return { provider: "mock" };
     try {
-      const { resolveLayaConfig } = await import("@sentinel/judgment-provider");
-      const cfg = resolveLayaConfig();
-      return { provider: "laya", mode: cfg.mode, warnings: cfg.warnings };
+      return { provider: provider.name, ...provider.describeConfig?.() };
     } catch (err) {
-      return { provider: "laya", mode: "invalid", warnings: [], error: err instanceof Error ? err.message : "invalid config" };
+      return { provider: provider.name, mode: "invalid", warnings: [], error: err instanceof Error ? err.message : "invalid config" };
     }
   });
   app.post("/v1/provider/test", async (req, reply) => {

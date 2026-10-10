@@ -51,13 +51,35 @@ pnpm --filter @sentinel/dashboard dev  # :3000
 ## Judgment providers
 
 Mocked by default (`JUDGMENT_PROVIDER=mock`, no key needed).
-Laya Studio or self-hosted `laya-serve` (Sentinel never hosts Laya):
+Any registered name works; unknown names refuse to boot.
 
 ```bash
 JUDGMENT_PROVIDER=laya
 LAYA_API_KEY=lsk_live_...                       # hosted
 # LAYA_API_URL=http://localhost:8000/v1/systemone  # self-hosted instead
 ```
+
+```bash
+JUDGMENT_PROVIDER=openai                         # OpenAI Decisions API
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=<decisions-model>                   # required, e.g. a gpt decisions model
+```
+
+```bash
+JUDGMENT_PROVIDER=ms-decision                    # Microsoft Decision-1 via OpenRouter
+MS_DECISION_API_KEY=sk-or-...
+# MS_DECISION_MODEL=microsoft/microsoft-decision-1  # default
+```
+
+```bash
+JUDGMENT_PROVIDER=jev                            # any System-One-wire endpoint
+JEV_API_URL=https://your-jev-endpoint/v1/systemone
+# JEV_API_KEY=...                                # required for remote endpoints
+```
+
+Custom wires implement `judge(state)` + `name` and call
+`registerProvider` — no server changes. Models advise only:
+deterministic checks + precedence always apply, outages fail closed.
 
 Check Settings → provider card → Test connection, or
 `curl -s localhost:3001/v1/provider/status`.

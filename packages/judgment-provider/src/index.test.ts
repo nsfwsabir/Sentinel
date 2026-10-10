@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MockJudgmentProvider } from "./index.js";
+import { MockJudgmentProvider, providerFromEnv, providerNames, registerProvider } from "./index.js";
 
 describe("mock provider", () => {
   it("flags exfil as violation with high confidence", async () => {
@@ -25,5 +25,33 @@ describe("mock provider", () => {
       environment: "development",
     });
     expect(out.find((j) => j.question === "policy_violation")?.answer).toBe("no");
+  });
+});
+
+describe("provider registry", () => {
+  it("defaults to mock and refuses unknown names", () => {
+    expect(providerFromEnv({}).name).toBe("mock");
+    expect(providerFromEnv({ JUDGMENT_PROVIDER: "" }).name).toBe("mock");
+    expect(() => providerFromEnv({ JUDGMENT_PROVIDER: "jeva" })).toThrow(/Unknown JUDGMENT_PROVIDER/);
+    expect(providerNames()).toEqual(expect.arrayContaining(["mock", "laya", "openai", "ms-decision", "jev"]));
+  });
+
+  it("builds wire-compatible models from env", () => {
+    expect(
+      providerFromEnv({ JUDGMENT_PROVIDER: "jev", JEV_API_URL: "http://localhost:8000/x", JEV_MODEL: "m" }).name,
+    ).toBe("jev");
+    expect(
+      providerFromEnv({ JUDGMENT_PROVIDER: "ms-decision", MS_DECISION_API_KEY: "k" }).name,
+    ).toBe("ms-decision");
+    expect(() => providerFromEnv({ JUDGMENT_PROVIDER: "ms-decision" })).toThrow(/MS_DECISION_API_KEY/);
+    expect(() => providerFromEnv({ JUDGMENT_PROVIDER: "openai", OPENAI_API_KEY: "k" })).toThrow(/OPENAI_MODEL/);
+  });
+
+  it("accepts custom-wire models via registerProvider", async () => {
+    registerProvider("test-echo", () => ({
+      name: "test-echo",
+      judge: async () => [],
+    }));
+    expect(providerFromEnv({ JUDGMENT_PROVIDER: "test-echo" }).name).toBe("test-echo");
   });
 });

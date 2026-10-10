@@ -25,13 +25,13 @@ export default async function SettingsPage() {
           <p className="text-neutral-500 dark:text-neutral-400">Approvals require admin basic auth. Judgment provider key stays server-side.</p>
         </div>
       </Card>
-      <Card title="Laya Judgment Provider">
+      <Card title="Judgment provider">
         <div className="flex flex-col gap-2 text-sm">
           <p>
             Provider: <span className="font-mono text-[13px]">{status.provider}</span>
             {status.mode && <> · Mode: <span className="font-mono text-[13px]">{status.mode}</span></>}
           </p>
-          <p className="text-neutral-500 dark:text-neutral-400">Hosted (Laya Studio + your key) or self-hosted `laya-serve` via LAYA_API_URL. Sentinel never hosts Laya.</p>
+          <p className="text-neutral-500 dark:text-neutral-400">Mock, Laya, OpenAI Decisions, Microsoft Decision-1, Jev, or a custom model via JUDGMENT_PROVIDER. Sentinel never hosts models; keys stay server-side.</p>
           {(status.warnings ?? []).map((w) => (
             <p key={w} className="text-neutral-500 dark:text-neutral-400">{w}</p>
           ))}

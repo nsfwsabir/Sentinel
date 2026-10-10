@@ -22,6 +22,8 @@ export type FocusedQuestion =
 export interface JudgmentProvider {
   judge(state: EvalState): Promise<Omit<Judgment, "id" | "decisionId">[]>;
   readonly name: string;
+  /** Public, secret-free metadata for /v1/provider/status. Optional. */
+  describeConfig?(): { mode?: string; warnings: string[] };
 }
 
 function textOf(state: EvalState): string {
@@ -81,8 +83,63 @@ export class MockJudgmentProvider implements JudgmentProvider {
  */
 export { LayaJudgmentProvider, type LayaProviderOptions } from "./laya.js";
 export { resolveLayaConfig, HOSTED_API_URL, type LayaMode, type ResolvedLayaConfig } from "./config.js";
+export { SystemOneJudgmentProvider, QUESTIONS, type SystemOneProviderOptions } from "./systemone.js";
+export { OpenAIJudgmentProvider, OPENAI_API_URL, resolveOpenAIConfig, type OpenAIProviderOptions } from "./openai.js";
+export { resolveSystemOneEnvConfig, type SystemOneEnvConfig } from "./config.js";
 import { LayaJudgmentProvider } from "./laya.js";
+import { OpenAIJudgmentProvider } from "./openai.js";
+import { SystemOneJudgmentProvider } from "./systemone.js";
+import { resolveSystemOneEnvConfig } from "./config.js";
 
-export function providerFromEnv(): JudgmentProvider {
-  return process.env.JUDGMENT_PROVIDER === "laya" ? new LayaJudgmentProvider() : new MockJudgmentProvider();
+export const MS_DECISION_API_URL = "https://openrouter.ai/api/alpha/decisions";
+export const MS_DECISION_MODEL = "microsoft/microsoft-decision-1";
+
+type ProviderFactory = (env: Record<string, string | undefined>) => JudgmentProvider;
+
+const registry = new Map<string, ProviderFactory>();
+
+/** Register a custom-wire model. Wire-compatibles need no code — see jev/ms-decision below. */
+export function registerProvider(name: string, factory: ProviderFactory): void {
+  registry.set(name, factory);
+}
+
+function msDecisionProvider(env: Record<string, string | undefined>): JudgmentProvider {
+  const cfg = resolveSystemOneEnvConfig(env, {
+    prefix: "MS_DECISION",
+    defaultUrl: MS_DECISION_API_URL,
+    defaultModel: MS_DECISION_MODEL,
+    requireKey: true,
+  });
+  return new SystemOneJudgmentProvider("ms-decision", cfg);
+}
+
+function jevProvider(env: Record<string, string | undefined>): JudgmentProvider {
+  const cfg = resolveSystemOneEnvConfig(env, {
+    prefix: "JEV",
+    requireKey: "when-remote",
+  });
+  return new SystemOneJudgmentProvider("jev", cfg);
+}
+
+registerProvider("mock", () => new MockJudgmentProvider());
+registerProvider("laya", (env) => new LayaJudgmentProvider({ env }));
+registerProvider("openai", (env) => new OpenAIJudgmentProvider({ env }));
+registerProvider("ms-decision", msDecisionProvider);
+registerProvider("jev", jevProvider);
+
+export function providerNames(): string[] {
+  return [...registry.keys()];
+}
+
+export function providerFromEnv(env: Record<string, string | undefined> = process.env): JudgmentProvider {
+  const name = (env.JUDGMENT_PROVIDER ?? "").trim() || "mock";
+  const factory = registry.get(name);
+  // Unknown names refuse to boot: a typo must never silently evaluate
+  // against the mock. Factory errors (missing keys, bad URLs) also throw.
+  if (!factory) {
+    throw new Error(
+      `Unknown JUDGMENT_PROVIDER "${name}"; registered providers: ${providerNames().join(", ")}`,
+    );
+  }
+  return factory(env);
 }

@@ -15,7 +15,7 @@ export type ResolvedLayaConfig = {
   warnings: string[];
 };
 
-function isLocalhost(hostname: string): boolean {
+export function isLocalhost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return (
     h === "localhost" ||
@@ -69,6 +69,70 @@ export function resolveLayaConfig(env: Record<string, string | undefined> = proc
     apiUrl,
     apiKey,
     model: env.LAYA_MODEL ?? undefined,
+    timeoutMs,
+    warnings,
+  };
+}
+
+export type SystemOneEnvConfig = {
+  mode: "hosted" | "custom";
+  apiUrl: string;
+  apiKey: string;
+  model?: string;
+  timeoutMs: number;
+  warnings: string[];
+};
+
+/**
+ * Generic System-One endpoint config for any wire-compatible model
+ * (Jev, Microsoft Decision-1 via OpenRouter, …). Same validation as Laya:
+ * http(s) only, localhost warning, key required unless explicitly remote-optional.
+ */
+export function resolveSystemOneEnvConfig(
+  env: Record<string, string | undefined>,
+  opts: {
+    prefix: string;
+    defaultUrl?: string;
+    defaultModel?: string;
+    defaultTimeoutMs?: number;
+    requireKey?: boolean | "when-remote";
+    modelEnv?: string;
+  },
+): SystemOneEnvConfig {
+  const urlKey = `${opts.prefix}_API_URL`;
+  const keyKey = `${opts.prefix}_API_KEY`;
+  const modelKey = opts.modelEnv ?? `${opts.prefix}_MODEL`;
+  const timeoutKey = `${opts.prefix}_TIMEOUT_MS`;
+  const apiUrl = env[urlKey] ?? opts.defaultUrl;
+  if (!apiUrl) throw new Error(`Invalid ${urlKey}: set it to the model endpoint URL`);
+  let url: URL;
+  try {
+    url = new URL(apiUrl);
+  } catch {
+    throw new Error(`Invalid ${urlKey}: not a valid URL`);
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error(`Invalid ${urlKey}: only http(s) endpoints are allowed`);
+  }
+  const warnings: string[] = [];
+  if (url.protocol === "http:" && !isLocalhost(url.hostname)) {
+    warnings.push(`${urlKey} uses plain HTTP for a non-localhost endpoint; prefer HTTPS`);
+  }
+  const remote = !isLocalhost(url.hostname);
+  const requireKey = opts.requireKey === "when-remote" ? remote : (opts.requireKey ?? true);
+  const apiKey = env[keyKey] ?? "";
+  if (requireKey && !apiKey) {
+    throw new Error(`${keyKey} is required for this endpoint`);
+  }
+  const timeoutMs = Number(env[timeoutKey] ?? opts.defaultTimeoutMs ?? 8000);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`Invalid ${timeoutKey}: must be a positive number`);
+  }
+  return {
+    mode: env[urlKey] !== undefined || opts.defaultUrl === undefined ? "custom" : "hosted",
+    apiUrl,
+    apiKey,
+    model: env[modelKey] ?? opts.defaultModel,
     timeoutMs,
     warnings,
   };

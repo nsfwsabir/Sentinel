@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveLayaConfig, HOSTED_API_URL } from "./config.js";
+import { resolveLayaConfig, HOSTED_API_URL, resolveSystemOneEnvConfig } from "./config.js";
 
 describe("laya config", () => {
   it("defaults to hosted with the official endpoint", () => {
@@ -48,6 +48,38 @@ describe("laya config", () => {
       expect.unreachable();
     } catch (err) {
       expect(String(err)).not.toContain("super-secret-key");
+    }
+  });
+});
+
+describe("generic system-one env config", () => {
+  it("resolves prefixed env with defaults", () => {
+    const cfg = resolveSystemOneEnvConfig(
+      { MS_DECISION_API_KEY: "k" },
+      { prefix: "MS_DECISION", defaultUrl: "https://example.com/d", defaultModel: "m" },
+    );
+    expect(cfg).toMatchObject({ mode: "hosted", apiUrl: "https://example.com/d", model: "m" });
+  });
+
+  it("requires a key unless remote-optional on localhost", () => {
+    expect(() =>
+      resolveSystemOneEnvConfig({ JEV_API_URL: "https://jev.example.com/x" }, { prefix: "JEV", requireKey: "when-remote" }),
+    ).toThrow(/JEV_API_KEY/);
+    const local = resolveSystemOneEnvConfig(
+      { JEV_API_URL: "http://localhost:8000/x" },
+      { prefix: "JEV", requireKey: "when-remote" },
+    );
+    expect(local.apiKey).toBe("");
+    expect(local.mode).toBe("custom");
+  });
+
+  it("rejects bad URLs without leaking keys", () => {
+    try {
+      resolveSystemOneEnvConfig({ X_API_URL: "ftp://x", X_API_KEY: "super-secret" }, { prefix: "X" });
+      expect.unreachable();
+    } catch (err) {
+      expect(String(err)).toContain("X_API_URL");
+      expect(String(err)).not.toContain("super-secret");
     }
   });
 });

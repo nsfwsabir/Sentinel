@@ -149,7 +149,7 @@ Engineer depth: <a href="#lifecycle">§4</a>, <a href="#providers">§5</a>.</p>
     <text x="385" y="285" text-anchor="middle" font-weight="700">Decision engine</text>
     <text x="385" y="301" text-anchor="middle" fill="#6b7280" font-size="10">BLOCK&gt;REVIEW&gt;ALLOW</text>
     <rect x="470" y="262" width="165" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
-    <text x="552" y="285" text-anchor="middle" font-weight="700">Judgment registry*</text>
+    <text x="552" y="285" text-anchor="middle" font-weight="700">Judgment registry</text>
     <text x="552" y="301" text-anchor="middle" fill="#6b7280" font-size="10">mock · laya · jev · custom</text>
     <rect x="645" y="262" width="130" height="60" rx="8" fill="#fff" stroke="#111" stroke-width="1.5"/>
     <text x="710" y="285" text-anchor="middle" font-weight="700">Approvals</text>
@@ -191,11 +191,8 @@ Engineer depth: <a href="#lifecycle">§4</a>, <a href="#providers">§5</a>.</p>
     <text x="60" y="420">read/write (PgStore) · limits</text>
   </g>
 </svg>
-<p>* Registry is <span class="pill planned">planned</span>: today <code>mock|laya</code> is a
-hardcoded binary in <code>providerFromEnv</code>. The enforcement boundary is the Fastify API:
-gateways translate protocols but never decide; models answer questions but never see policy
-outcomes; Postgres is the single source of truth. MCP is a stdio sidecar (no port), not a
-network service.</p>
+<p>Providers register by name; unknown <code>JUDGMENT_PROVIDER</code> values refuse to boot.
+MCP is a stdio sidecar (no port), not a network service.</p>
 </section>
 
 <section id="topo">
@@ -305,7 +302,7 @@ diagram once packaged
 </section>
 
 <section id="providers">
-<h2>5. Judgment providers <span class="pill planned">registry planned</span></h2>
+<h2>5. Judgment providers</h2>
 <p>The provider answers five focused <code>noul</code> questions
 (<code>sensitive_exposure, policy_violation, human_review_needed, destructive,
 targets_production</code>) — never "should we allow this?". Deterministic code owns
@@ -314,8 +311,10 @@ thresholds, precedence, and fail-closed behavior.</p>
 <tr><th>Model</th><th>Status</th><th>Config</th></tr>
 <tr><td><code>mock</code></td><td><span class="pill built">built</span></td><td>Default when <code>JUDGMENT_PROVIDER</code> is unset. Deterministic stand-in, same question shapes.</td></tr>
 <tr><td><code>laya</code></td><td><span class="pill built">built</span></td><td><code>LAYA_API_URL</code> (default hosted Studio), <code>LAYA_API_KEY</code> (required hosted), <code>LAYA_MODEL</code>, <code>LAYA_TIMEOUT_MS</code>. One retry, then throw → fail-closed.</td></tr>
-<tr><td><code>jev</code> + compatibles</td><td><span class="pill planned">planned</span> (env-only)</td><td>Same System-One wire — generic HTTP provider, <code>JEV_API_URL/KEY/MODEL</code>. No new provider code.</td></tr>
-<tr><td>custom wire</td><td><span class="pill planned">planned</span></td><td>Implement <code>judge(state)</code> + <code>name</code> in one file, one <code>registerProvider</code> line. Receives redacted args by contract.</td></tr>
+<tr><td><code>openai</code></td><td><span class="pill built">built</span></td><td>OpenAI Decisions API (typed predicates over the same five questions). <code>OPENAI_API_KEY</code> + <code>OPENAI_MODEL</code> required; refusals fail closed.</td></tr>
+<tr><td><code>ms-decision</code></td><td><span class="pill built">built</span></td><td>Microsoft Decision-1 via OpenRouter System-One wire. Defaults to <code>microsoft/microsoft-decision-1</code>; key required.</td></tr>
+<tr><td><code>jev</code> + compatibles</td><td><span class="pill built">built</span> (env-only)</td><td>Same System-One wire — generic HTTP provider, <code>JEV_API_URL/KEY/MODEL</code>. No new provider code.</td></tr>
+<tr><td>custom wire</td><td><span class="pill built">built</span></td><td>Implement <code>judge(state)</code> + <code>name</code> in one file, one <code>registerProvider</code> line. Receives redacted args by contract.</td></tr>
 </table>
 <div class="note"><strong>Fail-closed selection:</strong> unset/empty → mock. Any other unknown
 name → boot refusal listing registered providers (a typo must never silently evaluate
@@ -388,8 +387,7 @@ dark mode (class strategy, system default), stamp pills for verdicts.</p>
 <tr><td>No baked hosts</td><td><code>SENTINEL_API_URL</code> read per request (a <code>next.config env:</code> block once baked localhost into the image — removed, documented in-code)</td></tr>
 <tr><td>Pending queue everywhere</td><td>Sidebar live count with tick animation (reduced-motion safe)</td></tr>
 </table>
-<p>Settings provider card generalizes to the active model once the registry lands
-(<span class="pill planned">planned</span>); test-connection already uses the generic endpoint.</p>
+<p>Settings provider card shows the active model; test-connection uses the generic endpoint.</p>
 </section>
 
 <section id="auth">
@@ -424,7 +422,7 @@ dark mode (class strategy, system default), stamp pills for verdicts.</p>
 <table>
 <tr><th>Failure</th><th>Behavior</th></tr>
 <tr><td>Model timeout / error / malformed</td><td>Fail closed by tool risk (high→REVIEW/BLOCK, never silent ALLOW); <code>fallback_used</code> audited</td></tr>
-<tr><td>Unknown <code>JUDGMENT_PROVIDER</code></td><td>Boot refusal listing registered names <span class="pill planned">planned</span> (today: silent mock — a fail-open honesty bug)</td></tr>
+<tr><td>Unknown <code>JUDGMENT_PROVIDER</code></td><td>Boot refusal listing registered names (a typo never silently evaluates against the mock)</td></tr>
 <tr><td>Postgres unreachable at boot (when configured)</td><td>Crash loudly — no silent memory split-brain</td></tr>
 <tr><td>Schema drift at deploy</td><td><code>migrate --check</code> fails the deploy before traffic <span class="pill planned">planned</span></td></tr>
 <tr><td>Redis unavailable</td><td>Rate limiter fails open (documented); evaluation continues</td></tr>
